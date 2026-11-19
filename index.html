@@ -1,245 +1,307 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html data-theme="light" lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1F2A44">
-  <meta name="description" content="Track your daily expenses, income and budgets. Works offline.">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Expenses">
-  <title>Expense Tracker</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="preload" href="fonts/bricolage.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport">
+    <meta content="#1F2A44" name="theme-color">
+    <meta content="Track your daily expenses, income and budgets. Works offline." name="description">
+    <meta content="yes" name="apple-mobile-web-app-capable">
+    <meta content="yes" name="mobile-web-app-capable">
+    <meta content="black-translucent" name="apple-mobile-web-app-status-bar-style">
+    <meta content="Expenses" name="apple-mobile-web-app-title">
+    <title>Expense Tracker</title>
+    <link href="manifest.json" rel="manifest">
+    <link href="icons/icon.svg" rel="icon" type="image/svg+xml">
+    <link href="icons/icon-192.png" rel="apple-touch-icon">
+    <link as="font" crossorigin href="fonts/bricolage.woff2" rel="preload" type="font/woff2">
+    <link href="style.css" rel="stylesheet">
 </head>
 <body>
 
 <!-- Top bar -->
 <header class="topbar">
-  <div class="topbar-inner">
-    <h1 id="viewTitle">Dashboard</h1>
-    <div class="period" id="periodBar">
-      <button class="icon-btn" id="prevPeriod" aria-label="Previous period">
-        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <button class="period-label" id="periodLabel" title="Jump to current month">November 2026</button>
-      <button class="icon-btn" id="nextPeriod" aria-label="Next period">
-        <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
+    <div class="topbar-inner">
+        <h1 id="viewTitle">Dashboard</h1>
+        <div class="period" id="periodBar">
+            <button aria-label="Previous period" class="icon-btn" id="prevPeriod">
+                <svg viewBox="0 0 24 24">
+                    <path d="M15 18l-6-6 6-6"/>
+                </svg>
+            </button>
+            <button class="period-label" id="periodLabel" title="Jump to current month">November 2026</button>
+            <button aria-label="Next period" class="icon-btn" id="nextPeriod">
+                <svg viewBox="0 0 24 24">
+                    <path d="M9 6l6 6-6 6"/>
+                </svg>
+            </button>
+        </div>
     </div>
-  </div>
 </header>
 
 <main id="app">
-  <!-- Dashboard (rendered by JS) -->
-  <section id="view-dashboard" class="view"></section>
+    <!-- Dashboard (rendered by JS) -->
+    <section class="view" id="view-dashboard"></section>
 
-  <!-- Expenses -->
-  <section id="view-expenses" class="view" hidden>
-    <div class="toolbar card">
-      <div class="search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input type="search" id="expSearch" placeholder="Search description or notes" autocomplete="off">
-      </div>
-      <div class="toolbar-row">
-        <select id="expCat" class="input" aria-label="Filter by category"></select>
-        <select id="expPay" class="input" aria-label="Filter by payment method"></select>
-      </div>
-      <div class="toolbar-row2">
-        <div class="segmented" id="expScope">
-          <button data-scope="month" class="active">This month</button>
-          <button data-scope="all">All time</button>
+    <!-- Expenses -->
+    <section class="view" hidden id="view-expenses">
+        <div class="toolbar card">
+            <div class="search">
+                <svg viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="7"/>
+                    <path d="M20 20l-3.5-3.5"/>
+                </svg>
+                <input autocomplete="off" id="expSearch" placeholder="Search description or notes" type="search">
+            </div>
+            <div class="toolbar-row">
+                <select aria-label="Filter by category" class="input" id="expCat"></select>
+                <select aria-label="Filter by payment method" class="input" id="expPay"></select>
+            </div>
+            <div class="toolbar-row2">
+                <div class="segmented" id="expScope">
+                    <button class="active" data-scope="month">This month</button>
+                    <button data-scope="all">All time</button>
+                </div>
+                <select aria-label="Sort" class="input" id="expSort">
+                    <option value="new">Newest</option>
+                    <option value="old">Oldest</option>
+                    <option value="high">Highest</option>
+                    <option value="low">Lowest</option>
+                </select>
+            </div>
         </div>
-        <select id="expSort" class="input" aria-label="Sort">
-          <option value="new">Newest</option><option value="old">Oldest</option>
-          <option value="high">Highest</option><option value="low">Lowest</option>
-        </select>
-      </div>
-    </div>
-    <div class="summary-line" id="expSummary"></div>
-    <div id="expList"></div>
-  </section>
+        <div class="summary-line" id="expSummary"></div>
+        <div id="expList"></div>
+    </section>
 
-  <!-- Income -->
-  <section id="view-income" class="view" hidden>
-    <div class="toolbar card">
-      <div class="search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input type="search" id="incSearch" placeholder="Search description or notes" autocomplete="off">
-      </div>
-      <select id="incSrc" class="input" aria-label="Filter by source"></select>
-      <div class="toolbar-row2">
-        <div class="segmented" id="incScope">
-          <button data-scope="month" class="active">This month</button>
-          <button data-scope="all">All time</button>
+    <!-- Income -->
+    <section class="view" hidden id="view-income">
+        <div class="toolbar card">
+            <div class="search">
+                <svg viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="7"/>
+                    <path d="M20 20l-3.5-3.5"/>
+                </svg>
+                <input autocomplete="off" id="incSearch" placeholder="Search description or notes" type="search">
+            </div>
+            <select aria-label="Filter by source" class="input" id="incSrc"></select>
+            <div class="toolbar-row2">
+                <div class="segmented" id="incScope">
+                    <button class="active" data-scope="month">This month</button>
+                    <button data-scope="all">All time</button>
+                </div>
+                <select aria-label="Sort" class="input" id="incSort">
+                    <option value="new">Newest</option>
+                    <option value="old">Oldest</option>
+                    <option value="high">Highest</option>
+                    <option value="low">Lowest</option>
+                </select>
+            </div>
         </div>
-        <select id="incSort" class="input" aria-label="Sort">
-          <option value="new">Newest</option><option value="old">Oldest</option>
-          <option value="high">Highest</option><option value="low">Lowest</option>
-        </select>
-      </div>
-    </div>
-    <div class="summary-line" id="incSummary"></div>
-    <div id="incList"></div>
-  </section>
+        <div class="summary-line" id="incSummary"></div>
+        <div id="incList"></div>
+    </section>
 
-  <!-- Yearly summary (rendered by JS) -->
-  <section id="view-yearly" class="view" hidden></section>
+    <!-- Yearly summary (rendered by JS) -->
+    <section class="view" hidden id="view-yearly"></section>
 
-  <!-- Settings (rendered by JS) -->
-  <section id="view-settings" class="view" hidden></section>
+    <!-- Settings (rendered by JS) -->
+    <section class="view" hidden id="view-settings"></section>
 </main>
 
 <!-- Add button -->
-<button class="fab" id="fab" aria-label="Add entry">
-  <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+<button aria-label="Add entry" class="fab" id="fab">
+    <svg viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14"/>
+    </svg>
 </button>
 
 <!-- Bottom navigation -->
-<nav class="tabbar" aria-label="Main">
-  <button class="tab active" data-view="dashboard">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/></svg>
-    <span>Home</span>
-  </button>
-  <button class="tab" data-view="expenses">
-    <svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>
-    <span>Expenses</span>
-  </button>
-  <button class="tab" data-view="income">
-    <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="2.5"/><path d="M6 6V4h12v2"/></svg>
-    <span>Income</span>
-  </button>
-  <button class="tab" data-view="yearly">
-    <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-    <span>Year</span>
-  </button>
-  <button class="tab" data-view="settings">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-    <span>Settings</span>
-  </button>
+<nav aria-label="Main" class="tabbar">
+    <button class="tab active" data-view="dashboard">
+        <svg viewBox="0 0 24 24">
+            <rect height="9" rx="2" width="7" x="3" y="3"/>
+            <rect height="5" rx="2" width="7" x="14" y="3"/>
+            <rect height="9" rx="2" width="7" x="14" y="12"/>
+            <rect height="5" rx="2" width="7" x="3" y="16"/>
+        </svg>
+        <span>Home</span>
+    </button>
+    <button class="tab" data-view="expenses">
+        <svg viewBox="0 0 24 24">
+            <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/>
+            <path d="M9 8h6M9 12h6"/>
+        </svg>
+        <span>Expenses</span>
+    </button>
+    <button class="tab" data-view="income">
+        <svg viewBox="0 0 24 24">
+            <rect height="13" rx="2" width="20" x="2" y="6"/>
+            <circle cx="12" cy="12.5" r="2.5"/>
+            <path d="M6 6V4h12v2"/>
+        </svg>
+        <span>Income</span>
+    </button>
+    <button class="tab" data-view="yearly">
+        <svg viewBox="0 0 24 24">
+            <path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+        </svg>
+        <span>Year</span>
+    </button>
+    <button class="tab" data-view="settings">
+        <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+        </svg>
+        <span>Settings</span>
+    </button>
 </nav>
 
 <!-- Add / edit sheet -->
-<div class="modal" id="modal" hidden>
-  <div class="backdrop" data-close></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="formTitle">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2 id="formTitle">Add expense</h2>
-      <button class="icon-btn" data-close aria-label="Close">
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+<div class="modal" hidden id="modal">
+    <div class="backdrop" data-close></div>
+    <div aria-labelledby="formTitle" aria-modal="true" class="sheet" role="dialog">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+            <h2 id="formTitle">Add expense</h2>
+            <button aria-label="Close" class="icon-btn" data-close>
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 6l12 12M18 6L6 18"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="segmented" id="typeToggle">
+            <button class="active" data-type="expense" type="button">Expense</button>
+            <button data-type="income" type="button">Income</button>
+        </div>
+
+        <form id="txForm" novalidate>
+            <label class="amount-field">
+                <span id="curSym">Rs</span>
+                <input aria-label="Amount" autocomplete="off" id="fAmt" inputmode="decimal" placeholder="0" type="text">
+            </label>
+            <div aria-label="Calculator" class="calc-bar" id="calcBar">
+                <button aria-label="Plus" data-op="+" type="button">+</button>
+                <button aria-label="Minus" data-op="-" type="button">−</button>
+                <button aria-label="Times" data-op="*" type="button">×</button>
+                <button aria-label="Divide" data-op="/" type="button">÷</button>
+                <button aria-label="Work it out" class="eq" data-op="=" type="button">=</button>
+            </div>
+            <p class="hint" id="amtHint">Adding up a bill? Use + − × ÷</p>
+
+            <div class="field" hidden id="quickField">
+                <label>Quick add</label>
+                <div class="quick" id="fQuick"></div>
+            </div>
+
+            <div class="field" id="catField">
+                <label>Category</label>
+                <div class="chip-grid" id="fCatChips"></div>
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label for="fDate">Date</label>
+                    <input class="input" id="fDate" type="date">
+                </div>
+                <div class="field" id="payField">
+                    <label for="fPay">Paid with</label>
+                    <select class="input" id="fPay"></select>
+                </div>
+                <div class="field" hidden id="srcField">
+                    <label for="fSrc">Source</label>
+                    <select class="input" id="fSrc"></select>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="fDesc">Description</label>
+                <input autocomplete="off" class="input" id="fDesc" list="descList" maxlength="80"
+                       placeholder="e.g. Momo with friends" type="text">
+                <datalist id="descList"></datalist>
+            </div>
+            <div class="field" id="repeatField">
+                <label>Repeat</label>
+                <div class="segmented small" id="fRepeat">
+                    <button class="active" data-r="none" type="button">Once</button>
+                    <button data-r="weekly" type="button">Weekly</button>
+                    <button data-r="monthly" type="button">Monthly</button>
+                </div>
+            </div>
+            <div class="field">
+                <label for="fNotes">Notes <span class="muted">(optional)</span></label>
+                <input autocomplete="off" class="input" id="fNotes" maxlength="140" type="text">
+            </div>
+
+            <p class="form-error" id="formError" role="alert"></p>
+
+            <div class="form-actions">
+                <button class="btn danger" id="deleteTx" type="button">Delete</button>
+                <button class="btn" id="dupTx" type="button">Duplicate</button>
+                <button class="btn primary" id="saveTx" type="submit">Save</button>
+            </div>
+        </form>
     </div>
-
-    <div class="segmented" id="typeToggle">
-      <button type="button" data-type="expense" class="active">Expense</button>
-      <button type="button" data-type="income">Income</button>
-    </div>
-
-    <form id="txForm" novalidate>
-      <label class="amount-field">
-        <span id="curSym">Rs</span>
-        <input id="fAmt" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount">
-      </label>
-      <p class="hint" id="amtHint">Works like a calculator: try 120+80 or 900/3</p>
-
-      <div class="field" id="quickField" hidden>
-        <label>Quick add</label>
-        <div class="quick" id="fQuick"></div>
-      </div>
-
-      <div class="field" id="catField">
-        <label>Category</label>
-        <div class="chip-grid" id="fCatChips"></div>
-      </div>
-
-      <div class="field-row">
-        <div class="field">
-          <label for="fDate">Date</label>
-          <input type="date" id="fDate" class="input">
-        </div>
-        <div class="field" id="payField">
-          <label for="fPay">Paid with</label>
-          <select id="fPay" class="input"></select>
-        </div>
-        <div class="field" id="srcField" hidden>
-          <label for="fSrc">Source</label>
-          <select id="fSrc" class="input"></select>
-        </div>
-      </div>
-
-      <div class="field">
-        <label for="fDesc">Description</label>
-        <input id="fDesc" type="text" class="input" maxlength="80" placeholder="e.g. Momo with friends" autocomplete="off" list="descList">
-        <datalist id="descList"></datalist>
-      </div>
-      <div class="field" id="repeatField">
-        <label>Repeat</label>
-        <div class="segmented small" id="fRepeat">
-          <button type="button" data-r="none" class="active">Once</button>
-          <button type="button" data-r="weekly">Weekly</button>
-          <button type="button" data-r="monthly">Monthly</button>
-        </div>
-      </div>
-      <div class="field">
-        <label for="fNotes">Notes <span class="muted">(optional)</span></label>
-        <input id="fNotes" type="text" class="input" maxlength="140" autocomplete="off">
-      </div>
-
-      <p class="form-error" id="formError" role="alert"></p>
-
-      <div class="form-actions">
-        <button type="button" class="btn danger" id="deleteTx">Delete</button>
-        <button type="button" class="btn" id="dupTx">Duplicate</button>
-        <button type="submit" class="btn primary" id="saveTx">Save</button>
-      </div>
-    </form>
-  </div>
 </div>
 
 <!-- Generic dialog (goals, recurring) -->
-<div class="modal" id="dialog" hidden>
-  <div class="backdrop" data-dclose></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dTitle">
-    <div class="sheet-handle"></div>
-    <div class="sheet-head">
-      <h2 id="dTitle"></h2>
-      <button class="icon-btn" data-dclose aria-label="Close">
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+<div class="modal" hidden id="dialog">
+    <div class="backdrop" data-dclose></div>
+    <div aria-labelledby="dTitle" aria-modal="true" class="sheet" role="dialog">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+            <h2 id="dTitle"></h2>
+            <button aria-label="Close" class="icon-btn" data-dclose>
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 6l12 12M18 6L6 18"/>
+                </svg>
+            </button>
+        </div>
+        <form id="dForm" novalidate>
+            <div id="dBody"></div>
+            <p class="form-error" id="dError" role="alert"></p>
+            <div class="form-actions" id="dActions"></div>
+        </form>
     </div>
-    <form id="dForm" novalidate>
-      <div id="dBody"></div>
-      <p class="form-error" id="dError" role="alert"></p>
-      <div class="form-actions" id="dActions"></div>
-    </form>
-  </div>
 </div>
 
 <!-- PIN lock -->
-<div class="lock" id="lock" hidden>
-  <div class="lock-inner">
-    <div class="lock-icon"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
-    <h2 id="lockTitle">Enter PIN</h2>
-    <div class="pin-dots" id="pinDots"><i></i><i></i><i></i><i></i></div>
-    <p class="lock-msg" id="lockMsg"></p>
-    <div class="keypad" id="keypad">
-      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-      <button data-k="alt" class="k-text" id="lockAlt">Forgot?</button><button data-k="0">0</button>
-      <button data-k="del" class="k-text" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12z"/><path d="M17 9l-6 6M11 9l6 6"/></svg></button>
+<div class="lock" hidden id="lock">
+    <div class="lock-inner">
+        <div class="lock-icon">
+            <svg viewBox="0 0 24 24">
+                <rect height="10" rx="2" width="16" x="4" y="11"/>
+                <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+            </svg>
+        </div>
+        <h2 id="lockTitle">Enter PIN</h2>
+        <div class="pin-dots" id="pinDots"><i></i><i></i><i></i><i></i></div>
+        <p class="lock-msg" id="lockMsg"></p>
+        <div class="keypad" id="keypad">
+            <button data-k="1">1</button>
+            <button data-k="2">2</button>
+            <button data-k="3">3</button>
+            <button data-k="4">4</button>
+            <button data-k="5">5</button>
+            <button data-k="6">6</button>
+            <button data-k="7">7</button>
+            <button data-k="8">8</button>
+            <button data-k="9">9</button>
+            <button class="k-text" data-k="alt" id="lockAlt">Forgot?</button>
+            <button data-k="0">0</button>
+            <button aria-label="Delete" class="k-text" data-k="del">
+                <svg viewBox="0 0 24 24">
+                    <path d="M21 5H9l-6 7 6 7h12z"/>
+                    <path d="M17 9l-6 6M11 9l6 6"/>
+                </svg>
+            </button>
+        </div>
     </div>
-  </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-<input type="file" id="importFile" accept="application/json,.json" hidden>
-<input type="file" id="importCsv" accept=".csv,text/csv" hidden>
+<div aria-live="polite" class="toast" id="toast" role="status"></div>
+<input accept="application/json,.json" hidden id="importFile" type="file">
+<input accept=".csv,text/csv" hidden id="importCsv" type="file">
 
 <script src="app.js"></script>
 </body>
