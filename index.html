@@ -113,6 +113,10 @@
     <!-- Yearly summary (rendered by JS) -->
     <section class="view" hidden id="view-yearly"></section>
 
+    <!-- Category detail + monthly report (rendered by JS) -->
+    <section class="view" hidden id="view-cat"></section>
+    <section class="view" hidden id="view-report"></section>
+
     <!-- Lent & borrowed (rendered by JS) -->
     <section class="view" hidden id="view-debts"></section>
 
@@ -233,6 +237,33 @@
                        placeholder="e.g. Momo with friends" type="text">
                 <datalist id="descList"></datalist>
             </div>
+            <div class="field" id="splitField">
+                <button aria-expanded="false" class="split-toggle" id="splitToggle" type="button">
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="9" cy="8" r="3.2"/>
+                        <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
+                        <circle cx="17" cy="9" r="2.6"/>
+                        <path d="M16 14.2c2.9.3 5 2.7 5 5.8"/>
+                    </svg>
+                    <span>Split this bill with friends</span>
+                </button>
+                <div class="split-box" hidden id="splitBox">
+                    <label for="splitName">Split equally with</label>
+                    <div class="chips" id="splitPeople"></div>
+                    <div class="add-row">
+                        <input autocomplete="off" class="input" id="splitName" list="peopleList" maxlength="40"
+                               placeholder="Friend's name">
+                        <button class="btn" id="splitAdd" type="button">Add</button>
+                    </div>
+                    <datalist id="peopleList"></datalist>
+                    <div class="field">
+                        <label for="splitPayer">Who paid the bill?</label>
+                        <select class="input" id="splitPayer"></select>
+                    </div>
+                    <p class="split-sum" id="splitSum"></p>
+                </div>
+            </div>
+
             <div class="field" id="repeatField">
                 <label>Repeat</label>
                 <div class="segmented small" id="fRepeat">

@@ -277,6 +277,7 @@ const ui = {
     expF: {q: '', cat: '', pay: '', scope: 'month', sort: 'new', mode: 'list', day: null},
     incF: {q: '', src: '', scope: 'month', sort: 'new'},
     formRepeat: 'none',
+    split: {on: false, people: [], payer: 'me'},
     formType: 'expense',
     editing: null,
     formCat: ''
@@ -331,7 +332,9 @@ const TITLES = {
     income: 'Income',
     yearly: 'Year',
     settings: 'Settings',
-    debts: 'Lent & borrowed'
+    debts: 'Lent & borrowed',
+    cat: 'Category',
+    report: 'Report'
 };
 
 function render() {
@@ -342,10 +345,11 @@ function render() {
     $('#viewTitle').textContent = TITLES[ui.view];
     $('#periodBar').hidden = ui.view === 'settings' || ui.view === 'debts';
     $('#periodLabel').textContent = ui.view === 'yearly' ? String(ui.year) : `${MON[ui.m]} ${ui.y}`;
-    $('#fab').hidden = ui.view === 'settings';
+    $('#fab').hidden = ui.view === 'settings' || ui.view === 'report';
+    document.body.dataset.view = ui.view;
     ({
         dashboard: renderDashboard, expenses: () => renderTxView('expense'), income: () => renderTxView('income'),
-        yearly: renderYearly, settings: renderSettings, debts: renderDebts
+        yearly: renderYearly, settings: renderSettings, debts: renderDebts, cat: renderCat, report: renderReport
     })[ui.view]();
 }
 
@@ -429,6 +433,8 @@ function renderDashboard() {
     const sinceBackup = lb ? Math.floor((Date.now() - lb) / 864e5) : null;
     const showBackup = nEntries >= 10 && (sinceBackup === null || sinceBackup >= 7);
     const nudge = isCur && reminderDue();
+    const cuts = nEntries ? cutTips(y, m) : [];
+    const showReportBanner = isCur && t.getDate() <= 5 && monthData(pm.y, pm.m).exp.length > 0;
     const dt = debtTotals();
     const isNew = !nEntries && !state.recurring.length;
 
@@ -500,6 +506,14 @@ function renderDashboard() {
       ${stat('Top category', top ? `${esc(top.icon)} ${esc(top.name)}` : '—', 'stat-text', top ? ms(top.spent) : '')}
     </div>` : ''}
 
+    ${showReportBanner ? `
+    <div class="banner report-ready">
+      <span>Your ${MONTHS[pm.m]} report is ready.</span>
+      <button class="btn sm" data-report="prev">Open</button>
+    </div>` : ''}
+
+    ${isCur && !isNew ? weekHtml() : ''}
+
     ${tips.length && !isNew ? `
     <section class="block">
       <h2>Worth knowing</h2>
@@ -514,7 +528,7 @@ function renderDashboard() {
 
     ${rows.some(r => r.budget || r.spent) ? `
     <section class="block">
-      <div class="block-head"><h2>Categories</h2><span class="muted small">Tap one to see its expenses</span></div>
+      <div class="block-head"><h2>Categories</h2><span class="muted small">Tap one for details</span></div>
       <div class="panel cat-rows">
         ${rows.filter(r => r.budget || r.spent).sort((a, b) => b.spent - a.spent).map(r => {
         const w = r.budget ? Math.min(100, r.pct * 100) : (spent ? r.spent / spent * 100 : 0);
@@ -533,6 +547,12 @@ function renderDashboard() {
     }).join('')}
       </div>
       ${!budget ? `<p class="note">No budgets yet, and that's fine. After a few weeks, <button class="inline-link" data-goto="settings">let the app suggest budgets</button> from what you actually spend.</p>` : ''}
+    </section>` : ''}
+
+    ${cuts.length ? `
+    <section class="block">
+      <h2>Could you cut back?</h2>
+      <ul class="insights">${cuts.map(([ic, html]) => `<li><span class="ii">${ic}</span><span>${html}</span></li>`).join('')}</ul>
     </section>` : ''}
 
     <section class="block">
@@ -560,6 +580,10 @@ function renderDashboard() {
         <ul class="pay-key">${pays.map(([name, amt], i) => `<li><i style="background:var(--pay-${i % 5})"></i><span>${esc(name)}</span><b>${money(amt)}</b><small>${Math.round(amt / spent * 100)}%</small></li>`).join('')}</ul>
       </div>
     </section>` : ''}
+
+    ${exp.length ? `<button class="report-link" data-report="this">
+      <span class="ii">📄</span><span><b>${MONTHS[m]} report</b><small>A one-page summary you can save as PDF or share</small></span>
+      <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>` : ''}
 
     ${recent.length ? `
     <section class="block">
@@ -777,6 +801,224 @@ function renderTxView(type) {
       <div class="day-group">${group.map(x => txItem(x, type)).join('')}</div>`;
     }
     $('#' + P + 'List').innerHTML = html;
+}
+
+/* ----- This week (Sunday to Saturday) ----- */
+function weekHtml() {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    const start = new Date(t);
+    start.setDate(t.getDate() - t.getDay());
+    const day = (base, i) => ymd(new Date(base.getFullYear(), base.getMonth(), base.getDate() + i));
+    const lastStart = new Date(start);
+    lastStart.setDate(start.getDate() - 7);
+    const sumDay = d => total(state.expenses.filter(e => e.date === d));
+    const thisW = Array.from({length: 7}, (_, i) => sumDay(day(start, i)));
+    const lastW = Array.from({length: 7}, (_, i) => sumDay(day(lastStart, i)));
+    const upto = t.getDay();
+    const soFar = thisW.slice(0, upto + 1).reduce((a, b) => a + b, 0);
+    const lastSoFar = lastW.slice(0, upto + 1).reduce((a, b) => a + b, 0);
+    const lastTotal = lastW.reduce((a, b) => a + b, 0);
+    if (!soFar && !lastTotal) return '';
+    const max = Math.max(...thisW, ...lastW, 1);
+    const diff = soFar - lastSoFar;
+    const cmp = !lastSoFar ? (lastTotal ? `Last week you'd spent nothing by now.` : '')
+        : Math.abs(diff) < 1 ? 'Same as this point last week.'
+            : `${money(Math.abs(diff))} ${diff > 0 ? 'more' : 'less'} than this point last week.`;
+    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    return `
+    <section class="block">
+      <div class="block-head"><h2>This week</h2><span class="muted small">Last week: ${money(lastTotal)}</span></div>
+      <div class="panel week">
+        <div class="week-top"><strong>${money(soFar)}</strong><span class="${diff > 0 && lastSoFar ? 'neg' : diff < 0 ? 'pos' : 'muted'}">${cmp}</span></div>
+        <div class="week-bars">
+          ${thisW.map((v, i) => `
+            <div class="wb ${i === upto ? 'today' : ''} ${i > upto ? 'future' : ''}" title="${dayLabel(day(start, i))}: ${money(v)}">
+              <div class="wb-track">
+                <span class="wb-last" style="height:${lastW[i] / max * 100}%"></span>
+                <span class="wb-this" style="height:${v / max * 100}%"></span>
+              </div>
+              <span class="wb-amt">${v ? calAmt(v) : ''}</span>
+              <span class="wb-day">${labels[i]}</span>
+            </div>`).join('')}
+        </div>
+        <div class="chart-legend"><span><i style="background:var(--cobalt)"></i>This week</span><span><i style="background:var(--grid);box-shadow:inset 0 0 0 1px var(--line)"></i>Last week</span></div>
+      </div>
+    </section>`;
+}
+
+/* ----- Where could I cut back? ----- */
+function cutTips(y, m) {
+    const exp = monthData(y, m).exp;
+    if (exp.length < 5) return [];
+    const t = new Date();
+    const isCur = t.getFullYear() === y && t.getMonth() === m;
+    const dim = daysIn(y, m);
+    const tips = [];
+    // categories running above their usual level (vs. average of up to 3 earlier months)
+    const prev = [1, 2, 3].map(k => {
+        const d = new Date(y, m - k, 1);
+        return monthData(d.getFullYear(), d.getMonth()).exp;
+    }).filter(a => a.length);
+    if (prev.length && (!isCur || t.getDate() >= 7)) {
+        const scale = isCur ? dim / t.getDate() : 1;
+        const sumBy = arr => arr.reduce((acc, e) => (acc[e.cat] = (acc[e.cat] || 0) + e.amt, acc), {});
+        const now = sumBy(exp);
+        const usual = {};
+        prev.forEach(a => Object.entries(sumBy(a)).forEach(([c, v]) => {
+            usual[c] = (usual[c] || 0) + v / prev.length;
+        }));
+        Object.entries(now).map(([c, v]) => [c, v * scale, usual[c] || 0])
+            .filter(([, proj, avg]) => avg > 0 && proj - avg > Math.max(500, avg * 0.25))
+            .sort((a, b) => (b[1] - b[2]) - (a[1] - a[2])).slice(0, 2)
+            .forEach(([c, proj, avg]) => tips.push([catInfo(c).icon, isCur
+                ? `<b>${esc(c)}</b> is heading for ${money(Math.round(proj))} this month, about ${money(Math.round(proj - avg))} more than usual`
+                : `<b>${esc(c)}</b> was ${money(Math.round(proj - avg))} above your usual ${money(Math.round(avg))}`]));
+    }
+    // small things bought again and again
+    const groups = {};
+    exp.filter(e => e.desc && !e.recId).forEach(e => {
+        const k = e.desc.trim().toLowerCase();
+        (groups[k] = groups[k] || {name: e.desc.trim(), n: 0, sum: 0, cat: e.cat}).n++;
+        groups[k].sum += e.amt;
+    });
+    Object.values(groups).filter(g => g.n >= 4).sort((a, b) => b.sum - a.sum).slice(0, 2).forEach(g => {
+        tips.push([catInfo(g.cat).icon, `<b>${esc(g.name)}</b>: ${g.n} times = ${money(g.sum)}. Half as often would save about ${moneyShort(g.sum / 2 * 12)} a year`]);
+    });
+    return tips.slice(0, 3);
+}
+
+/* ----- Category detail ----- */
+function renderCat() {
+    const name = ui.catView;
+    const c = catInfo(name);
+    const {y, m} = ui;
+    $('#viewTitle').textContent = name;
+    const months = Array.from({length: 6}, (_, k) => {
+        const d = new Date(y, m - 5 + k, 1);
+        return {y: d.getFullYear(), m: d.getMonth()};
+    })
+        .map(o => ({...o, v: total(monthData(o.y, o.m).exp.filter(e => e.cat === name))}));
+    const exp = monthData(y, m).exp.filter(e => e.cat === name);
+    const spent = total(exp);
+    const earlier = months.slice(0, 5).filter(o => o.v > 0);
+    const avg = earlier.length ? earlier.reduce((a, o) => a + o.v, 0) / earlier.length : 0;
+    const allSpent = total(monthData(y, m).exp);
+    const budget = Number(c.budget) || 0;
+    const st = statusOf(spent, budget);
+    const groups = {};
+    exp.forEach(e => {
+        const k = (e.desc || '(no description)').trim().toLowerCase();
+        (groups[k] = groups[k] || {name: e.desc || '(no description)', n: 0, sum: 0}).n++;
+        groups[k].sum += e.amt;
+    });
+    const often = Object.values(groups).filter(g => g.n >= 2).sort((a, b) => b.n - a.n || b.sum - a.sum).slice(0, 4);
+    const biggest = exp.slice().sort((a, b) => b.amt - a.amt).slice(0, 5);
+    $('#view-cat').innerHTML = `
+    <section class="cat-hero" style="--c:${c.color}">
+      <span class="cat-hero-icon">${esc(c.icon)}</span>
+      <div>
+        <span class="cat-hero-label">${MONTHS[m]} ${y}</span>
+        <div class="cat-hero-value">${money(spent)}</div>
+        <span class="cat-hero-sub">${allSpent ? `${Math.round(spent / allSpent * 100)}% of everything you spent` : 'Nothing spent this month'}</span>
+      </div>
+    </section>
+    <div class="ledger">
+      ${statHtml('Usual month', avg ? moneyShort(avg) : '—', '', earlier.length ? `average of ${earlier.length} earlier month${earlier.length > 1 ? 's' : ''}` : 'Not enough history yet')}
+      ${statHtml('Budget', budget ? moneyShort(budget) : '—', '', budget ? (spent > budget ? `${money(spent - budget)} over` : `${money(budget - spent)} left`) : 'No budget set')}
+      ${statHtml('Expenses', String(exp.length), '', exp.length ? `average ${moneyShort(spent / exp.length)} each` : '')}
+      ${statHtml('Status', budget ? st.t : 'Tracking', budget ? (st.k === 'over' ? 'neg' : st.k === 'ok' ? 'pos' : '') : '', budget ? `${Math.round(spent / budget * 100)}% used` : '')}
+    </div>
+    <section class="block">
+      <div class="block-head"><h2>Last 6 months</h2><span class="muted small">Tap a bar</span></div>
+      <div class="panel"><canvas class="chart" id="catChart"></canvas></div>
+    </section>
+    ${biggest.length ? `<section class="block"><h2>Biggest this month</h2><div class="panel tx-list">${biggest.map(e => txItem(e, 'expense', true)).join('')}</div></section>` : ''}
+    ${often.length ? `<section class="block"><h2>Bought most often</h2><div class="panel">
+      <ul class="pay-key">${often.map(g => `<li><i style="background:${c.color}"></i><span>${esc(g.name)}</span><b>${money(g.sum)}</b><small>${g.n}×</small></li>`).join('')}</ul></div></section>` : ''}
+    <button class="btn full" data-act="cat-all">See every ${esc(name)} expense</button>`;
+    requestAnimationFrame(() => {
+        const cv = $('#catChart');
+        if (cv) drawBars(cv, months.map(o => MON[o.m]), [{name, data: months.map(o => o.v), color: c.color}], {
+            height: 170, highlight: 5, tip: i => `${MONTHS[months[i].m]} ${months[i].y}: ${money(months[i].v)}`
+        });
+    });
+}
+
+/* ----- Monthly report (printable) ----- */
+function renderReport() {
+    const {y, m} = ui;
+    const {exp, inc} = monthData(y, m);
+    const spent = total(exp), income = total(inc), saved = income - spent;
+    const pm = m === 0 ? {y: y - 1, m: 11} : {y, m: m - 1};
+    const prev = monthData(pm.y, pm.m).exp;
+    const prevSpent = total(prev);
+    const rows = categoryRows(exp).filter(r => r.spent || r.budget).sort((a, b) => b.spent - a.spent);
+    const budget = state.settings.categories.reduce((a, c) => a + (Number(c.budget) || 0), 0);
+    const pays = {};
+    exp.forEach(e => {
+        const k = e.pay || 'Not set';
+        pays[k] = (pays[k] || 0) + e.amt;
+    });
+    const top = exp.slice().sort((a, b) => b.amt - a.amt).slice(0, 8);
+    const tips = [...insights(exp, prev, {isCur: false, elapsed: daysIn(y, m), pm}), ...cutTips(y, m)].slice(0, 6);
+    const dt = debtTotals();
+    const bsSpan = bsOn() ? bsMonthSpan(y, m) : '';
+    $('#viewTitle').textContent = 'Report';
+    $('#view-report').innerHTML = `
+    <article class="report" id="reportDoc">
+      <header class="rep-head">
+        <div class="flagline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <h2>${MONTHS[m]} ${y}</h2>
+        <p>${bsSpan ? bsSpan + ' · ' : ''}Expense report, made ${new Date().toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    })}</p>
+      </header>
+      <div class="rep-sum">
+        <div><span>Spent</span><b>${money(spent)}</b><small>${prevSpent ? `${spent > prevSpent ? '↑' : '↓'} ${money(Math.abs(spent - prevSpent))} vs ${MON[pm.m]}` : ''}</small></div>
+        <div><span>Income</span><b class="pos">${money(income)}</b><small>${inc.length} entr${inc.length === 1 ? 'y' : 'ies'}</small></div>
+        <div><span>Saved</span><b class="${saved < 0 ? 'neg' : 'pos'}">${money(saved)}</b><small>${income ? `${Math.round(saved / income * 100)}% of income` : ''}</small></div>
+        <div><span>Budget</span><b>${budget ? money(budget) : '—'}</b><small>${budget ? `${Math.round(spent / budget * 100)}% used` : 'none set'}</small></div>
+      </div>
+      ${rows.length ? `
+      <h3>By category</h3>
+      <table class="rep-table">
+        <thead><tr><th>Category</th><th>Spent</th><th>Share</th><th>Budget</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${esc(r.icon)} ${esc(r.name)}</td><td>${money(r.spent)}</td><td>${spent ? Math.round(r.spent / spent * 100) : 0}%</td>
+          <td class="${r.status.k === 'over' ? 'neg' : ''}">${r.budget ? `${money(r.budget)}${r.status.k === 'over' ? ' (over)' : ''}` : '—'}</td></tr>`).join('')}</tbody>
+      </table>` : '<p class="muted">No expenses this month.</p>'}
+      ${top.length ? `
+      <h3>Biggest expenses</h3>
+      <table class="rep-table">
+        <tbody>${top.map(e => `<tr><td>${esc(e.desc || e.cat)}<small>${dayLabel(e.date)} · ${esc(e.cat)}</small></td><td>${money(e.amt)}</td></tr>`).join('')}</tbody>
+      </table>` : ''}
+      ${Object.keys(pays).length ? `
+      <h3>Paid with</h3>
+      <table class="rep-table"><tbody>${Object.entries(pays).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${money(v)}</td><td>${Math.round(v / spent * 100)}%</td></tr>`).join('')}</tbody></table>` : ''}
+      ${inc.length ? `
+      <h3>Income</h3>
+      <table class="rep-table"><tbody>${inc.slice().sort((a, b) => a.date.localeCompare(b.date)).map(i => `<tr><td>${esc(i.desc || i.src)}<small>${dayLabel(i.date)} · ${esc(i.src || '')}</small></td><td class="pos">${money(i.amt)}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${dt.open.length ? `
+      <h3>Lent &amp; borrowed (still open)</h3>
+      <table class="rep-table"><tbody>${dt.open.map(d => `<tr><td>${esc(d.person)}<small>${d.dir === 'lent' ? 'owes you' : 'you owe'}</small></td><td class="${d.dir === 'lent' ? 'pos' : 'neg'}">${money(debtLeft(d))}</td></tr>`).join('')}</tbody></table>` : ''}
+      ${tips.length ? `<h3>Worth knowing</h3><ul class="rep-tips">${tips.map(([ic, h]) => `<li><span>${ic}</span><span>${h}</span></li>`).join('')}</ul>` : ''}
+    </article>
+    <div class="btn-grid no-print">
+      <button class="btn primary" data-act="report-pdf">Save as PDF</button>
+      <button class="btn" data-act="report-share">Share summary</button>
+    </div>
+    <p class="note no-print">“Save as PDF” opens your phone's print screen: choose <b>Save as PDF</b> as the printer.</p>`;
+}
+
+function reportSummaryText() {
+    const {y, m} = ui;
+    const {exp, inc} = monthData(y, m);
+    const spent = total(exp), income = total(inc);
+    const rows = categoryRows(exp).filter(r => r.spent).sort((a, b) => b.spent - a.spent).slice(0, 5);
+    return [`My spending, ${MONTHS[m]} ${y}`, `Spent: ${money(spent)}`, `Income: ${money(income)}`, `Saved: ${money(income - spent)}`, '',
+        'Top categories:', ...rows.map(r => `• ${r.name}: ${money(r.spent)} (${Math.round(r.spent / spent * 100)}%)`)].join('\n');
 }
 
 /* ----- Calendar (heat map of daily spending) ----- */
@@ -1153,7 +1395,8 @@ function setFormType(type) {
     $('#srcField').hidden = isExp;
     $('#formTitle').textContent = `${ui.editing ? 'Edit' : 'Add'} ${isExp ? 'expense' : 'income'}`;
     $('#fDesc').placeholder = isExp ? 'e.g. Momo with friends' : 'e.g. November allowance';
-    $('#repeatField').hidden = !!ui.editing;
+    $('#splitField').hidden = !!ui.editing || !isExp;
+    $('#repeatField').hidden = !!ui.editing || (isExp && ui.split.on);
     $('#deleteTx').hidden = !ui.editing;
     $('#dupTx').hidden = !ui.editing;
     // description suggestions
@@ -1215,6 +1458,59 @@ function updateAmtHint() {
     }
 }
 
+/* ----- Split a bill ----- */
+function knownPeople() {
+    return uniq([...state.debts.slice().reverse().map(d => d.person)]).slice(0, 40);
+}
+
+function renderSplit() {
+    const sp = ui.split;
+    $('#splitToggle').setAttribute('aria-expanded', String(sp.on));
+    $('#splitToggle').classList.toggle('on', sp.on);
+    $('#splitToggle span').textContent = sp.on ? 'Splitting this bill' : 'Split this bill with friends';
+    $('#splitBox').hidden = !sp.on;
+    if (!sp.on) return;
+    $('#splitPeople').innerHTML = sp.people.map((p, i) =>
+            `<span class="tag">${esc(p)}<button type="button" data-sdel="${i}" aria-label="Remove ${esc(p)}">✕</button></span>`).join('')
+        || '<span class="muted small">Add the people you shared it with.</span>';
+    $('#peopleList').innerHTML = knownPeople().filter(p => !sp.people.includes(p)).map(p => `<option value="${esc(p)}"></option>`).join('');
+    if (!sp.people.includes(sp.payer)) sp.payer = 'me';
+    fillSelect($('#splitPayer'), [['me', 'I paid'], ...sp.people.map(p => [p, `${p} paid`])], sp.payer);
+    $('#splitPayer').value = sp.payer;
+    updateSplitSum();
+}
+
+function updateSplitSum() {
+    const sp = ui.split;
+    if (!sp.on) return;
+    const totalAmt = parseAmount($('#fAmt').value);
+    const n = sp.people.length + 1;
+    const el = $('#splitSum');
+    if (!sp.people.length || !(totalAmt > 0)) {
+        el.textContent = sp.people.length ? 'Enter the full bill amount above.' : '';
+        return;
+    }
+    const share = Math.round(totalAmt / n * 100) / 100;
+    const names = sp.people.length === 1 ? sp.people[0] : sp.people.slice(0, -1).join(', ') + ' and ' + sp.people[sp.people.length - 1];
+    el.innerHTML = sp.payer === 'me'
+        ? `Your share <b>${money(share)}</b> is saved as the expense. ${esc(names)} ${sp.people.length === 1 ? 'owes' : 'each owe'} you <b>${money(share)}</b>.`
+        : `Your share <b>${money(share)}</b> is saved as the expense. You owe ${esc(sp.payer)} <b>${money(share)}</b>.`;
+}
+
+function addSplitPerson() {
+    const inp = $('#splitName');
+    const v = inp.value.trim();
+    if (!v) return;
+    if (ui.split.people.some(p => p.toLowerCase() === v.toLowerCase())) {
+        toast(`${v} is already added`);
+        return;
+    }
+    ui.split.people.push(v);
+    inp.value = '';
+    renderSplit();
+    inp.focus();
+}
+
 function openForm(type = 'expense', id = null) {
     ui.editing = id;
     const rec = id ? (type === 'expense' ? state.expenses : state.income).find(x => x.id === id) : null;
@@ -1227,8 +1523,11 @@ function openForm(type = 'expense', id = null) {
     $('#fDesc').value = rec ? (rec.desc || '') : '';
     $('#fNotes').value = rec ? (rec.notes || '') : '';
     $('#formError').textContent = '';
-    ui.formCat = rec && type === 'expense' ? rec.cat : '';
+    ui.formCat = rec && type === 'expense' ? rec.cat : (ui.presetCat || '');
+    ui.presetCat = '';
     setRepeat('none');
+    ui.split = {on: false, people: [], payer: 'me'};
+    renderSplit();
 
     fillSelect($('#fPay'), allPays().map(p => [p, p]), rec && type === 'expense' ? rec.pay : state.settings.lastPay);
     if (!$('#fPay').value && $('#fPay').options.length) $('#fPay').selectedIndex = 0;
@@ -1320,6 +1619,48 @@ function submitForm(e) {
         ruleMsg = ` · repeats ${rule.freq}`;
     }
 
+    // split bill: only your share is the expense; the rest goes to Lent & borrowed
+    let splitMsg = '';
+    if (!existing && isExp && ui.split.on) {
+        const sp = ui.split;
+        if (!sp.people.length) return err('Add at least one person to split with, or turn splitting off.');
+        const n = sp.people.length + 1;
+        const share = Math.round(rec.amt / n * 100) / 100;
+        const what = rec.desc || rec.cat;
+        rec.notes = [rec.notes, `Split ${n} ways, bill ${money(rec.amt)}`].filter(Boolean).join(' · ');
+        rec.amt = share;
+        if (sp.payer === 'me') {
+            sp.people.forEach(p => state.debts.push({
+                id: uid(),
+                dir: 'lent',
+                person: p,
+                amt: share,
+                date,
+                due: '',
+                note: `Split: ${what}`,
+                payments: [],
+                settled: false,
+                created: Date.now()
+            }));
+            splitMsg = `Your share ${money(share)} saved. ${sp.people.length === 1 ? `${sp.people[0]} owes` : `${sp.people.length} people each owe`} you ${money(share)}`;
+        } else {
+            state.debts.push({
+                id: uid(),
+                dir: 'borrowed',
+                person: sp.payer,
+                amt: share,
+                date,
+                due: '',
+                note: `Split: ${what}`,
+                payments: [],
+                settled: false,
+                created: Date.now()
+            });
+            splitMsg = `Your share ${money(share)} saved. You owe ${sp.payer} ${money(share)}`;
+        }
+    }
+
+    const prevCopy = existing ? {...existing} : null;
     if (existing) Object.assign(existing, rec);
     else arr.push(rec);
     const added = runRecurring(true);
@@ -1330,7 +1671,15 @@ function submitForm(e) {
     const d = parseDate(date);
     const elsewhere = !existing && (d.getFullYear() !== ui.y || d.getMonth() !== ui.m) && ui.view !== 'yearly';
     const alert = isExp ? budgetAlert(rec.cat, date, before) : null;
-    toast(alert || `${isExp ? 'Expense' : 'Income'} ${existing ? 'updated' : 'saved'}${elsewhere ? ` in ${MON[d.getMonth()]} ${d.getFullYear()}` : ''}${ruleMsg}${added ? ` (+${added} past repeats)` : ''}`);
+    if (existing && !alert) {
+        toast(`${isExp ? 'Expense' : 'Income'} updated`, 'Undo', () => {
+            Object.assign(existing, prevCopy);
+            save();
+            render();
+        });
+    } else {
+        toast(alert || splitMsg || `${isExp ? 'Expense' : 'Income'} ${existing ? 'updated' : 'saved'}${elsewhere ? ` in ${MON[d.getMonth()]} ${d.getFullYear()}` : ''}${ruleMsg}${added ? ` (+${added} past repeats)` : ''}`);
+    }
     render();
 }
 
@@ -2448,7 +2797,11 @@ function bindEvents() {
         ui.year = t.getFullYear();
         render();
     });
-    $('#fab').addEventListener('click', () => (ui.view === 'debts' ? openDebt() : openForm(ui.view === 'income' ? 'income' : 'expense')));
+    $('#fab').addEventListener('click', () => {
+        if (ui.view === 'debts') return openDebt();
+        if (ui.view === 'cat') ui.presetCat = ui.catView;
+        openForm(ui.view === 'income' ? 'income' : 'expense');
+    });
 
     // global clicks (transactions, empty-state buttons, budget rows, chart tips)
     document.addEventListener('click', e => {
@@ -2468,8 +2821,30 @@ function bindEvents() {
         if (e.target.closest('[data-act="backup-now"]')) return shareBackup();
         const br = e.target.closest('.budget-row');
         if (br) {
-            ui.expF = {...ui.expF, q: '', cat: br.dataset.cat, pay: '', scope: 'month', sort: 'new', day: null};
+            ui.catView = br.dataset.cat;
+            return go('cat');
+        }
+        if (e.target.closest('[data-act="cat-all"]')) {
+            ui.expF = {...ui.expF, q: '', cat: ui.catView, pay: '', scope: 'all', sort: 'new', mode: 'list', day: null};
             return go('expenses');
+        }
+        const rep = e.target.closest('[data-report]');
+        if (rep) {
+            if (rep.dataset.report === 'prev') {
+                ui.m--;
+                if (ui.m < 0) {
+                    ui.m = 11;
+                    ui.y--;
+                }
+            }
+            return go('report');
+        }
+        if (e.target.closest('[data-act="report-pdf"]')) return window.print();
+        if (e.target.closest('[data-act="report-share"]')) {
+            const text = reportSummaryText();
+            if (navigator.share) return navigator.share({title: 'My spending', text}).catch(() => {
+            });
+            return navigator.clipboard.writeText(text).then(() => toast('Summary copied')).catch(() => toast('Couldn’t share on this device'));
         }
         const gt = e.target.closest('[data-goto]');
         if (gt) return go(gt.dataset.goto);
@@ -2556,6 +2931,31 @@ function bindEvents() {
     });
     $('#fAmt').addEventListener('input', updateAmtHint);
     $('#fDate').addEventListener('input', updateDateBS);
+    $('#splitToggle').addEventListener('click', () => {
+        ui.split.on = !ui.split.on;
+        if (ui.split.on) setRepeat('none');
+        $('#repeatField').hidden = ui.split.on;
+        renderSplit();
+        if (ui.split.on) setTimeout(() => $('#splitName').focus(), 50);
+    });
+    $('#splitAdd').addEventListener('click', addSplitPerson);
+    $('#splitName').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addSplitPerson();
+        }
+    });
+    $('#splitPeople').addEventListener('click', e => {
+        const b = e.target.closest('[data-sdel]');
+        if (!b) return;
+        ui.split.people.splice(Number(b.dataset.sdel), 1);
+        renderSplit();
+    });
+    $('#splitPayer').addEventListener('change', e => {
+        ui.split.payer = e.target.value;
+        updateSplitSum();
+    });
+    $('#fAmt').addEventListener('input', updateSplitSum);
     // + − × ÷ buttons (phone number keypads don't have them)
     const calcBar = $('#calcBar');
     calcBar.addEventListener('pointerdown', e => {
