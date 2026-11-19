@@ -2093,3 +2093,319 @@ body:has(.modal:not([hidden])) .toast {
         transition: none !important;
     }
 }
+
+/* =========================================================
+   Calendar, lent & borrowed, reminders, Nepali dates
+   ========================================================= */
+.search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 46px;
+    gap: 8px;
+}
+
+.mode-btn {
+    width: 46px;
+    border-radius: var(--r-sm);
+    background: var(--paper-2);
+    color: var(--ink-2);
+    display: grid;
+    place-items: center;
+}
+
+.mode-btn.active {
+    background: var(--ink);
+    color: var(--paper);
+}
+
+[data-theme="dark"] .mode-btn.active {
+    background: var(--cobalt);
+    color: #fff;
+}
+
+/* calendar heat map */
+.cal {
+    padding: 14px 12px 12px;
+}
+
+.cal-head, .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.cal-head span {
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink-2);
+    padding-bottom: 4px;
+}
+
+.cal-day {
+    position: relative;
+    aspect-ratio: 1 / 1.08;
+    min-width: 0;
+    border-radius: 11px;
+    background: var(--paper-2);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    justify-items: start;
+    align-content: space-between;
+    padding: 5px 5px 4px;
+    text-align: left;
+    overflow: hidden;
+}
+
+.cal-day .cd {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.cal-day .cbs {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+    opacity: .55;
+    line-height: 1;
+}
+
+.cal-day .ca {
+    grid-row: 3;
+    font-size: 10.5px;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cal-day.lv1, .cal-key .lv1 {
+    background: color-mix(in srgb, var(--cobalt) 18%, var(--paper));
+}
+
+.cal-day.lv2, .cal-key .lv2 {
+    background: color-mix(in srgb, var(--cobalt) 38%, var(--paper));
+}
+
+.cal-day.lv3, .cal-key .lv3 {
+    background: color-mix(in srgb, var(--cobalt) 65%, var(--paper));
+    color: #fff;
+}
+
+.cal-day.lv4, .cal-key .lv4 {
+    background: var(--cobalt);
+    color: #fff;
+}
+
+.cal-day.future {
+    opacity: .45;
+}
+
+.cal-day.today {
+    box-shadow: inset 0 0 0 2.5px var(--sun);
+}
+
+.cal-day.sel {
+    box-shadow: inset 0 0 0 3px var(--ink);
+}
+
+[data-theme="dark"] .cal-day.sel {
+    box-shadow: inset 0 0 0 3px #fff;
+}
+
+.cal-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    font-weight: 600;
+}
+
+.cal-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.cal-key i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.cal-tip {
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    text-align: center;
+}
+
+.cal-all {
+    display: block;
+    margin: 8px auto 0;
+}
+
+/* lent & borrowed */
+.ledger.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tx.debt.settled {
+    opacity: .55;
+}
+
+.overdue {
+    color: var(--danger);
+    font-weight: 700;
+}
+
+.debt-sum {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: var(--r-sm);
+    background: var(--paper-2);
+    font-size: 14px;
+}
+
+.debt-sum strong {
+    font-family: var(--display);
+    font-size: 19px;
+    font-stretch: 88%;
+}
+
+.pay-hist {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 3px;
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.pay-hist li {
+    display: flex;
+    justify-content: space-between;
+}
+
+.pay-hist b {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+#dActions {
+    flex-wrap: wrap;
+}
+
+/* reminder nudge */
+.banner.nudge {
+    background: color-mix(in srgb, var(--cobalt) 14%, var(--paper));
+}
+
+/* Nepali dates */
+.hero-bs {
+    margin-top: 2px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, .72);
+}
+
+.day-head small.bs {
+    margin-left: 8px;
+    font-family: var(--font);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-2);
+    font-stretch: 100%;
+}
+
+.bs-hint {
+    font-size: 12px;
+    color: var(--cobalt);
+    font-weight: 700;
+    min-height: 0;
+}
+
+.bs-hint:empty {
+    display: none;
+}
+
+/* small phones */
+@media (max-width: 370px) {
+    .cal {
+        padding: 12px 8px 10px;
+    }
+
+    .cal-head, .cal-grid {
+        gap: 4px;
+    }
+
+    .cal-day {
+        padding: 4px 3px 3px 4px;
+        border-radius: 9px;
+    }
+
+    .cal-day .cd {
+        font-size: 13px;
+    }
+
+    .cal-day .cbs {
+        top: 4px;
+        right: 3px;
+        font-size: 8.5px;
+    }
+
+    .cal-day .ca {
+        font-size: 9.5px;
+    }
+}
+
+@media (max-width: 400px) {
+    /* category editor: budget moves under the name */
+    .cat-head {
+        display: none;
+    }
+
+    .cat-edit {
+        grid-template-columns: 32px 44px minmax(0, 1fr) 30px;
+        grid-template-areas: "color icon name del" ". . budget .";
+        row-gap: 6px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .cat-edit input[type="color"] {
+        grid-area: color;
+    }
+
+    .cat-edit .icon-in {
+        grid-area: icon;
+    }
+
+    .cat-edit .input:not(.icon-in):not(.budget-in) {
+        grid-area: name;
+    }
+
+    .cat-edit .budget-in {
+        grid-area: budget;
+        text-align: left;
+    }
+
+    .cat-edit .icon-btn {
+        grid-area: del;
+    }
+}

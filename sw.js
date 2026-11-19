@@ -49,3 +49,73 @@ self.addEventListener('fetch', event => {
                 .catch(() => caches.match(req).then(hit => hit || caches.match('./index.html')))
     );
 });
+
+/* ---------- Daily reminder (Chrome on Android, installed app) ----------
+   The page saves { on, time, lastLog } into IndexedDB; Chrome wakes this
+   worker now and then, and it notifies if the reminder time has passed
+   and nothing was logged today. */
+function readKV(key) {
+    return new Promise(resolve => {
+        const r = indexedDB.open('expense-tracker-sw', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => {
+            const req = r.result.transaction('kv').objectStore('kv').get(key);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => resolve(null);
+        };
+        r.onerror = () => resolve(null);
+    });
+}
+
+function writeKV(key, val) {
+    return new Promise(resolve => {
+        const r = indexedDB.open('expense-tracker-sw', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => {
+            const tx = r.result.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(val, key);
+            tx.oncomplete = resolve;
+            tx.onerror = resolve;
+        };
+        r.onerror = resolve;
+    });
+}
+
+const two = n => String(n).padStart(2, '0');
+
+async function checkReminder() {
+    const r = await readKV('reminder');
+    if (!r || !r.on) return;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+    const [hh, mm] = (r.time || '21:00').split(':').map(Number);
+    if (now.getHours() * 60 + now.getMinutes() < hh * 60 + mm) return;
+    if (r.lastLog === today || r.notified === today) return;
+    await self.registration.showNotification("Log today's spending", {
+        body: 'Nothing added today yet. It takes five seconds.',
+        icon: 'icons/icon-192.png',
+        badge: 'icons/icon-192.png',
+        tag: 'daily-reminder',
+        data: {url: './?add=expense'}
+    });
+    await writeKV('reminder', {...r, notified: today});
+}
+
+self.addEventListener('periodicsync', event => {
+    if (event.tag === 'daily-reminder') event.waitUntil(checkReminder());
+});
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || './';
+    event.waitUntil(
+        self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(wins => {
+            for (const w of wins) {
+                if ('focus' in w) {
+                    w.navigate(url);
+                    return w.focus();
+                }
+            }
+            return self.clients.openWindow(url);
+        })
+    );
+});

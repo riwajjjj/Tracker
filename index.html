@@ -45,12 +45,20 @@
     <!-- Expenses -->
     <section class="view" hidden id="view-expenses">
         <div class="toolbar card">
-            <div class="search">
-                <svg viewBox="0 0 24 24">
-                    <circle cx="11" cy="11" r="7"/>
-                    <path d="M20 20l-3.5-3.5"/>
-                </svg>
-                <input autocomplete="off" id="expSearch" placeholder="Search description or notes" type="search">
+            <div class="search-row">
+                <div class="search">
+                    <svg viewBox="0 0 24 24">
+                        <circle cx="11" cy="11" r="7"/>
+                        <path d="M20 20l-3.5-3.5"/>
+                    </svg>
+                    <input autocomplete="off" id="expSearch" placeholder="Search" type="search">
+                </div>
+                <button aria-label="Switch to calendar view" class="mode-btn" id="expMode" title="Calendar view">
+                    <svg viewBox="0 0 24 24">
+                        <rect height="16" rx="3" width="18" x="3" y="5"/>
+                        <path d="M3 10h18M8 3v4M16 3v4"/>
+                    </svg>
+                </button>
             </div>
             <div class="toolbar-row">
                 <select aria-label="Filter by category" class="input" id="expCat"></select>
@@ -69,6 +77,7 @@
                 </select>
             </div>
         </div>
+        <div id="expCal"></div>
         <div class="summary-line" id="expSummary"></div>
         <div id="expList"></div>
     </section>
@@ -81,7 +90,7 @@
                     <circle cx="11" cy="11" r="7"/>
                     <path d="M20 20l-3.5-3.5"/>
                 </svg>
-                <input autocomplete="off" id="incSearch" placeholder="Search description or notes" type="search">
+                <input autocomplete="off" id="incSearch" placeholder="Search" type="search">
             </div>
             <select aria-label="Filter by source" class="input" id="incSrc"></select>
             <div class="toolbar-row2">
@@ -103,6 +112,9 @@
 
     <!-- Yearly summary (rendered by JS) -->
     <section class="view" hidden id="view-yearly"></section>
+
+    <!-- Lent & borrowed (rendered by JS) -->
+    <section class="view" hidden id="view-debts"></section>
 
     <!-- Settings (rendered by JS) -->
     <section class="view" hidden id="view-settings"></section>
@@ -203,6 +215,7 @@
                 <div class="field">
                     <label for="fDate">Date</label>
                     <input class="input" id="fDate" type="date">
+                    <span class="bs-hint" id="fDateBS"></span>
                 </div>
                 <div class="field" id="payField">
                     <label for="fPay">Paid with</label>
@@ -300,7 +313,7 @@
 </div>
 
 <div aria-live="polite" class="toast" id="toast" role="status"></div>
-<input accept="application/json,.json" hidden id="importFile" type="file">
+<input accept="application/json,.json,text/plain,.txt" hidden id="importFile" type="file">
 <input accept=".csv,text/csv" hidden id="importCsv" type="file">
 
 <script src="app.js"></script>

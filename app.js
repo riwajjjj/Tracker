@@ -29,6 +29,7 @@ function defaultData() {
         income: [],
         recurring: [],
         goals: [],
+        debts: [],
         settings: {
             currency: 'Rs',
             numberStyle: 'en-IN',
@@ -37,6 +38,8 @@ function defaultData() {
             pinHash: null,
             lastBackup: null,
             budgetsCleanV2: true,
+            bsDates: false,
+            reminder: {on: false, time: '21:00'},
             categories: cats.map(([name, icon], i) => ({name, icon, budget: 0, color: PALETTE[i % PALETTE.length]})),
             payments: ['Cash', 'eSewa', 'Khalti', 'Debit Card', 'Credit Card', 'Bank Transfer'],
             sources: ['Salary', 'Part-time Job', 'Allowance / Pocket Money', 'Freelance', 'Scholarship', 'Gift', 'Other']
@@ -50,6 +53,7 @@ function normalize(d) {
     if (!Array.isArray(s.categories)) s.categories = def.settings.categories;
     if (!Array.isArray(s.payments)) s.payments = def.settings.payments;
     if (!Array.isArray(s.sources)) s.sources = def.settings.sources;
+    if (!s.reminder || typeof s.reminder !== 'object') s.reminder = {on: false, time: '21:00'};
     const clean = arr => (Array.isArray(arr) ? arr : [])
         .filter(x => x && typeof x.date === 'string' && !isNaN(Number(x.amt)))
         .map(x => ({...x, id: x.id || uid(), amt: Number(x.amt)}));
@@ -75,6 +79,7 @@ function normalize(d) {
         income: clean(d && d.income),
         recurring: arr(d && d.recurring).filter(r => r && r.next && r.amt > 0),
         goals: arr(d && d.goals).filter(g => g && g.name),
+        debts: arr(d && d.debts).filter(x => x && x.person && x.amt > 0).map(x => ({payments: [], ...x})),
         settings: s
     };
 }
@@ -91,6 +96,7 @@ function load() {
 function save() {
     try {
         localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        if (typeof syncReminderState === 'function') syncReminderState();
     } catch (e) {
         toast('Could not save. Storage may be full.');
     }
@@ -213,6 +219,49 @@ function parseAmount(str) {
     }
 }
 
+/* ---------- Bikram Sambat (Nepali) dates ----------
+   Month lengths for BS 2070–2090, checked day-by-day against two Nepali calendar libraries.
+   BS 2070/01/01 = 2013-04-14 AD. */
+const BS = {
+    Y0: 2070,
+    anchor: Date.UTC(2013, 3, 14),
+    rows: '313131323131293030293030,313132313131302930293030,313231323130302930293030,313231323130303029293031,313131323131302930293030,313132313131302930293030,313231323130303029293030,313231323130303029302931,313131323131302930293030,313132313131302930293030,313231323130303029293030,313231323130303029302931,313132313131302930293030,313132313131302930293030,313132313130303029303030,313231323031303029303030,303231323130303029303030,313132313131303029303030,303132323031303029303030,303231323130303029303030,303231323130303029303030'.split(',').map(r => r.match(/../g).map(Number))
+};
+const BS_MONTHS = ['Baishakh', 'Jestha', 'Asar', 'Shrawan', 'Bhadra', 'Ashwin', 'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra'];
+
+function toBS(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    let days = Math.round((Date.UTC(y, m - 1, d) - BS.anchor) / 864e5);
+    if (days < 0) return null;
+    for (let i = 0; i < BS.rows.length; i++) {
+        for (let j = 0; j < 12; j++) {
+            const n = BS.rows[i][j];
+            if (days < n) return {y: BS.Y0 + i, m: j, d: days + 1};
+            days -= n;
+        }
+    }
+    return null;
+}
+
+const bsOn = () => !!state.settings.bsDates;
+
+function bsShort(dateStr) {
+    const b = toBS(dateStr);
+    return b ? `${BS_MONTHS[b.m]} ${b.d}` : '';
+}
+
+function bsFull(dateStr) {
+    const b = toBS(dateStr);
+    return b ? `${b.y}/${pad(b.m + 1)}/${pad(b.d)} · ${BS_MONTHS[b.m]} ${b.d}, ${b.y}` : '';
+}
+
+function bsMonthSpan(y, m) {
+    const a = toBS(ymd(new Date(y, m, 1))), b = toBS(ymd(new Date(y, m, daysIn(y, m))));
+    if (!a || !b) return '';
+    if (a.y === b.y && a.m === b.m) return `${BS_MONTHS[a.m]} ${a.y}`;
+    return a.y === b.y ? `${BS_MONTHS[a.m]}–${BS_MONTHS[b.m]} ${b.y}` : `${BS_MONTHS[a.m]} ${a.y}–${BS_MONTHS[b.m]} ${b.y}`;
+}
+
 function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -225,7 +274,7 @@ const ui = {
     y: now.getFullYear(),
     m: now.getMonth(),
     year: now.getFullYear(),
-    expF: {q: '', cat: '', pay: '', scope: 'month', sort: 'new'},
+    expF: {q: '', cat: '', pay: '', scope: 'month', sort: 'new', mode: 'list', day: null},
     incF: {q: '', src: '', scope: 'month', sort: 'new'},
     formRepeat: 'none',
     formType: 'expense',
@@ -276,7 +325,14 @@ function categoryRows(exp) {
 const sortTx = (a, b) => (b.date.localeCompare(a.date)) || ((b.created || 0) - (a.created || 0));
 
 /* ---------- Rendering ---------- */
-const TITLES = {dashboard: 'Dashboard', expenses: 'Expenses', income: 'Income', yearly: 'Year', settings: 'Settings'};
+const TITLES = {
+    dashboard: 'Dashboard',
+    expenses: 'Expenses',
+    income: 'Income',
+    yearly: 'Year',
+    settings: 'Settings',
+    debts: 'Lent & borrowed'
+};
 
 function render() {
     $$('.view').forEach(v => {
@@ -284,12 +340,12 @@ function render() {
     });
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === ui.view));
     $('#viewTitle').textContent = TITLES[ui.view];
-    $('#periodBar').hidden = ui.view === 'settings';
+    $('#periodBar').hidden = ui.view === 'settings' || ui.view === 'debts';
     $('#periodLabel').textContent = ui.view === 'yearly' ? String(ui.year) : `${MON[ui.m]} ${ui.y}`;
     $('#fab').hidden = ui.view === 'settings';
     ({
         dashboard: renderDashboard, expenses: () => renderTxView('expense'), income: () => renderTxView('income'),
-        yearly: renderYearly, settings: renderSettings
+        yearly: renderYearly, settings: renderSettings, debts: renderDebts
     })[ui.view]();
 }
 
@@ -371,7 +427,9 @@ function renderDashboard() {
     const nEntries = state.expenses.length + state.income.length;
     const lb = state.settings.lastBackup;
     const sinceBackup = lb ? Math.floor((Date.now() - lb) / 864e5) : null;
-    const showBackup = nEntries >= 10 && (sinceBackup === null || sinceBackup >= 14);
+    const showBackup = nEntries >= 10 && (sinceBackup === null || sinceBackup >= 7);
+    const nudge = isCur && reminderDue();
+    const dt = debtTotals();
     const isNew = !nEntries && !state.recurring.length;
 
     // month strip: one bar split by category; with a budget the bar's full width is the budget
@@ -397,6 +455,7 @@ function renderDashboard() {
         <span class="hero-label">Spent in ${MONTHS[m]}${isCur ? ' so far' : ''}</span>
         ${change !== null && spent > 0 ? `<span class="pill ${change > 0 ? 'pill-bad' : 'pill-good'}">${change >= 2 ? `${(spent / prevSpent).toFixed(1)}× ${MON[pm.m]}` : `${change > 0 ? '↑' : '↓'} ${Math.abs(Math.round(change * 100))}% vs ${MON[pm.m]}`}</span>` : ''}
       </div>
+      ${bsOn() && bsMonthSpan(y, m) ? `<div class="hero-bs">${bsMonthSpan(y, m)}</div>` : ''}
       <div class="hero-value" data-target="${spent}">${money(spent)}</div>
       <div class="strip ${spent ? '' : 'empty'}" role="img" aria-label="Spending split by category">${strip}${overMark}</div>
       ${stripKey ? `<div class="strip-key">${stripKey}</div>` : ''}
@@ -418,9 +477,14 @@ function renderDashboard() {
       <button class="btn primary" data-act="add">Add first expense</button>
     </section>` : ''}
 
+    ${nudge ? `
+    <div class="banner nudge">
+      <span>Nothing logged today yet. Spent anything?</span>
+      <button class="btn sm" data-act="add">Add it</button>
+    </div>` : ''}
     ${showBackup ? `
     <div class="banner">
-      <span>${sinceBackup === null ? 'You haven’t backed up yet.' : `Last backup was ${sinceBackup} days ago.`} Your data only lives on this device.</span>
+      <span>${sinceBackup === null ? 'You haven’t backed up yet.' : `Last backup was ${sinceBackup} days ago.`} Save a copy to Google Drive.</span>
       <button class="btn sm" data-act="backup-now">Back up</button>
     </div>` : ''}
 
@@ -475,6 +539,17 @@ function renderDashboard() {
       <div class="block-head"><h2>Saving for</h2><button class="link" data-act="goal-new">New goal</button></div>
       ${state.goals.length ? `<div class="panel goal-list">${state.goals.map(goalRow).join('')}</div>`
         : '<p class="note" style="margin-top:0">A phone, a trip, an emergency fund? Add a goal and watch it fill up.</p>'}
+    </section>
+
+    <section class="block">
+      <div class="block-head"><h2>Lent &amp; borrowed</h2><button class="link" data-goto="debts">${state.debts.length ? 'See all' : 'Add'}</button></div>
+      ${dt.open.length ? `
+        <div class="ledger two">
+          ${statHtml('Owed to you', moneyShort(dt.owedToMe), dt.owedToMe ? 'pos' : '')}
+          ${statHtml('You owe', moneyShort(dt.iOwe), dt.iOwe ? 'neg' : '')}
+        </div>
+        <div class="panel tx-list">${dt.open.slice().sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).slice(0, 3).map(debtRow).join('')}</div>`
+        : '<p class="note" style="margin-top:0">Lent a friend money, or borrowed some? Keep track so nobody forgets.</p>'}
     </section>
 
     ${pays.length ? `
@@ -541,6 +616,13 @@ function relDay(dateStr) {
 
 function insights(exp, prevExp, {isCur, elapsed, pm}) {
     const out = [];
+    if (isCur) {
+        state.debts.filter(d => !d.settled && d.due && d.due < todayStr() && debtLeft(d) > 0).slice(0, 2).forEach(d => {
+            out.push(['⏰', d.dir === 'lent'
+                ? `<b>${esc(d.person)}</b> was due to pay you back ${money(debtLeft(d))}`
+                : `You were due to pay <b>${esc(d.person)}</b> back ${money(debtLeft(d))}`]);
+        });
+    }
     // upcoming recurring (next 7 days)
     if (isCur) {
         const t = new Date();
@@ -623,6 +705,18 @@ function renderTxView(type) {
     } else {
         fillSelect($('#incSrc'), [['', 'All sources'], ...allSources().map(s => [s, s])], f.src);
     }
+    const cal = isExp && f.mode === 'cal';
+    if (cal) f.scope = 'month';
+    if (isExp) {
+        const mb = $('#expMode');
+        mb.classList.toggle('active', cal);
+        mb.setAttribute('aria-label', cal ? 'Switch to list view' : 'Switch to calendar view');
+        mb.title = cal ? 'List view' : 'Calendar view';
+        mb.innerHTML = cal
+            ? '<svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'
+            : '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
+        $('#expScope').closest('.toolbar-row2').hidden = cal;
+    }
     const scope = $('#' + P + 'Scope');
     scope.querySelector('[data-scope="month"]').textContent = ui.y === new Date().getFullYear() ? `${MON[ui.m]} only` : `${MON[ui.m]} ${ui.y}`;
     $$('button', scope).forEach(b => b.classList.toggle('active', b.dataset.scope === f.scope));
@@ -638,6 +732,11 @@ function renderTxView(type) {
         const q = f.q.toLowerCase();
         list = list.filter(x => [x.desc, x.notes, x.cat, x.pay, x.src].some(v => (v || '').toLowerCase().includes(q)));
     }
+    if (isExp) {
+        $('#expCal').innerHTML = cal ? calendarHtml(list) : '';
+        if (cal && f.day) list = list.filter(x => x.date === f.day);
+        else if (!cal) f.day = null;
+    }
     const sorters = {
         new: sortTx,
         old: (a, b) => -sortTx(a, b),
@@ -649,8 +748,12 @@ function renderTxView(type) {
 
     const word = isExp ? (list.length === 1 ? 'expense' : 'expenses') : (list.length === 1 ? 'entry' : 'entries');
     $('#' + P + 'Summary').innerHTML = list.length
-        ? `<span>${list.length} ${word}</span><strong class="${isExp ? '' : 'pos'}">${money(total(list))}</strong>` : '';
+        ? `<span>${cal && f.day ? `${dayLabel(f.day)} · ` : ''}${list.length} ${word}</span><strong class="${isExp ? '' : 'pos'}">${money(total(list))}</strong>` : '';
 
+    if (!list.length && cal && f.day) {
+        $('#expList').innerHTML = `<div class="card">${empty('🌱', 'No spending on ' + dayLabel(f.day), 'A no-spend day. Nice.', false)}</div>`;
+        return;
+    }
     if (!list.length) {
         const filtered = f.q || f.cat || f.pay || f.src;
         $('#' + P + 'List').innerHTML = `<div class="card">${filtered
@@ -670,10 +773,61 @@ function renderTxView(type) {
         const d = list[i].date;
         const group = [];
         while (i < list.length && list[i].date === d) group.push(list[i++]);
-        html += `<div class="day-head"><span>${dayLabel(d)}</span><span>${money(total(group))}</span></div>
+        html += `<div class="day-head"><span>${dayLabel(d)}${bsOn() && toBS(d) ? `<small class="bs">${bsShort(d)}</small>` : ''}</span><span>${money(total(group))}</span></div>
       <div class="day-group">${group.map(x => txItem(x, type)).join('')}</div>`;
     }
     $('#' + P + 'List').innerHTML = html;
+}
+
+/* ----- Calendar (heat map of daily spending) ----- */
+
+// at most 4 characters so it fits a small day cell: 850, 1.2k, 12k, 1.2L
+function calAmt(v) {
+    if (v < 1000) return String(Math.round(v));
+    if (v < 9950) return (Math.round(v / 100) / 10).toString().replace(/\.0$/, '') + 'k';
+    if (v < 99500) return Math.round(v / 1000) + 'k';
+    if (state.settings.numberStyle === 'en-IN') return v < 1e7 ? (v < 995000 ? (Math.round(v / 1e4) / 10).toString().replace(/\.0$/, '') : Math.round(v / 1e5)) + 'L' : Math.round(v / 1e7) + 'Cr';
+    return v < 1e6 ? Math.round(v / 1000) + 'k' : Math.round(v / 1e6) + 'M';
+}
+
+function calendarHtml(monthList) {
+    const y = ui.y, m = ui.m, dim = daysIn(y, m);
+    const lead = new Date(y, m, 1).getDay();              // weeks start on Sunday
+    const per = Array(dim).fill(0);
+    monthList.forEach(e => {
+        per[Number(e.date.slice(8, 10)) - 1] += Number(e.amt) || 0;
+    });
+    const sorted = per.filter(v => v > 0).sort((a, b) => a - b);
+    // levels from quartiles so one huge day doesn't wash out the rest
+    const q = p => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
+    const cuts = [q(0.25), q(0.5), q(0.75)];
+    const level = v => (v <= 0 ? 0 : v <= cuts[0] ? 1 : v <= cuts[1] ? 2 : v <= cuts[2] ? 3 : 4);
+    const today = todayStr();
+    const t = new Date();
+    const elapsed = (t.getFullYear() === y && t.getMonth() === m) ? t.getDate() : (new Date(y, m + 1, 0) < t ? dim : 0);
+    const noSpend = per.slice(0, elapsed).filter(v => v === 0).length;
+    const sel = ui.expF.day;
+    let cells = '';
+    for (let i = 0; i < lead; i++) cells += '<span class="cal-blank"></span>';
+    for (let d = 1; d <= dim; d++) {
+        const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
+        const v = per[d - 1];
+        const future = ds > today;
+        const b = bsOn() ? toBS(ds) : null;
+        cells += `<button class="cal-day lv${level(v)} ${ds === today ? 'today' : ''} ${ds === sel ? 'sel' : ''} ${future ? 'future' : ''}" data-day="${ds}"
+      aria-label="${dayLabel(ds)}: ${v ? money(v) : 'nothing spent'}">
+      <span class="cd">${d}</span>${b ? `<span class="cbs">${b.d}</span>` : ''}
+      <span class="ca">${v ? calAmt(v) : ''}</span></button>`;
+    }
+    return `<div class="panel cal">
+    <div class="cal-head">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => `<span>${d}</span>`).join('')}</div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-foot">
+      <span>${elapsed ? `${noSpend} no-spend day${noSpend === 1 ? '' : 's'}` : ''}${bsOn() && bsMonthSpan(y, m) ? `${elapsed ? ' · ' : ''}${bsMonthSpan(y, m)}` : ''}</span>
+      <span class="cal-key">Less <i class="lv1"></i><i class="lv2"></i><i class="lv3"></i><i class="lv4"></i> More</span>
+    </div>
+    ${sel ? '<button class="link cal-all" data-day="">Show the whole month</button>' : '<p class="cal-tip">Tap a day to see what you spent.</p>'}
+  </div>`;
 }
 
 /* ----- Yearly ----- */
@@ -778,6 +932,9 @@ function renderSettings() {
         <div class="segmented small">${['auto', 'light', 'dark'].map(t => `<button data-act="theme" data-v="${t}" class="${s.theme === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div>
       </div>
       <div class="set-row"><label for="sCur">Currency symbol</label><input id="sCur" class="input sm" data-f="currency" value="${esc(s.currency)}" maxlength="5"></div>
+      <div class="set-row"><span>Nepali dates (BS)</span>
+        <div class="segmented small">${[['off', 'Off'], ['on', 'Show']].map(([v, l]) => `<button data-act="bs" data-v="${v}" class="${(v === 'on') === !!s.bsDates ? 'active' : ''}">${l}</button>`).join('')}</div>
+      </div>
       <div class="set-row"><label for="sNum">Number format</label>
         <select id="sNum" class="input sm" data-f="numstyle"><option value="en-IN">1,00,000</option><option value="en-US">100,000</option></select>
       </div>
@@ -792,7 +949,7 @@ function renderSettings() {
             <input type="color" value="${esc(c.color)}" data-f="cat-color" data-i="${i}" aria-label="Color for ${esc(c.name)}">
             <input class="input icon-in" value="${esc(c.icon)}" data-f="cat-icon" data-i="${i}" maxlength="4" aria-label="Icon">
             <input class="input" value="${esc(c.name)}" data-f="cat-name" data-i="${i}" maxlength="30" aria-label="Name">
-            <input class="input budget-in" value="${c.budget || ''}" inputmode="decimal" placeholder="None" data-f="cat-budget" data-i="${i}" aria-label="Monthly budget">
+            <input class="input budget-in" value="${c.budget || ''}" inputmode="decimal" placeholder="No budget" data-f="cat-budget" data-i="${i}" aria-label="Monthly budget">
             <button class="icon-btn danger" data-act="del-cat" data-i="${i}" aria-label="Delete ${esc(c.name)}">✕</button>
           </div>`).join('')}
       </div>
@@ -814,6 +971,21 @@ function renderSettings() {
     </div>
 
     <div class="card">
+      <h2>Daily reminder</h2>
+      <div class="set-row"><span>Remind me</span>
+        <div class="segmented small">${[['off', 'Off'], ['on', 'On']].map(([v, l]) => `<button data-act="rem" data-v="${v}" class="${(v === 'on') === !!s.reminder.on ? 'active' : ''}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="set-row"><label for="sRemTime">At</label><input id="sRemTime" type="time" class="input sm" data-f="rem-time" value="${esc(s.reminder.time)}"></div>
+      ${s.reminder.on ? `
+        <p class="muted small">If you haven’t logged anything by then, you’ll see a nudge when you open the app${ui.bgReminder === 'ok' ? ', and your phone will notify you (it can arrive a little late: Android decides the exact time)' : ''}.</p>
+        ${ui.bgReminder && ui.bgReminder !== 'ok' ? `<p class="muted small">${ui.bgReminder === 'denied' ? 'Notifications are blocked for this site.' : 'This browser can’t send reminders while the app is closed.'} For a reminder that always works, add one to your calendar:</p>` : '<p class="muted small">Most reliable: add a repeating reminder to your phone’s calendar.</p>'}
+        <div class="btn-grid">
+          <button class="btn" data-act="rem-google">📅 Google Calendar</button>
+          <button class="btn" data-act="rem-ics">🗓️ Other calendar</button>
+        </div>` : '<p class="muted small" style="margin-bottom:0">A nudge to log your spending each evening, so the habit sticks.</p>'}
+    </div>
+
+    <div class="card">
       <h2>App lock</h2>
       <p class="muted small" style="margin-top:-4px">${s.pinHash ? 'A 4-digit PIN is needed to open the app (asked again after 1 minute away).' : 'Keep your spending private with a 4-digit PIN.'}</p>
       <div class="btn-grid">
@@ -830,14 +1002,16 @@ function renderSettings() {
 
     <div class="card">
       <h2>Your data</h2>
-      <p class="muted small">${state.expenses.length} expenses · ${state.income.length} income entries · ${state.goals.length} goals.
+      <p class="muted small">${state.expenses.length} expenses · ${state.income.length} income entries · ${state.goals.length} goals · ${state.debts.length} lent/borrowed.
         Stored only on this device. ${s.lastBackup ? `Last backup: ${new Date(s.lastBackup).toLocaleDateString(undefined, {
         day: 'numeric',
         month: 'short',
         year: 'numeric'
     })}.` : 'No backup yet.'}</p>
+      <button class="btn primary full" style="margin:0 0 8px" data-act="share-backup">☁️ Back up to Google Drive</button>
+      <p class="muted small" style="margin-top:0">Opens your share menu: pick <b>Drive</b> (or any app) to save the file. To restore, tap Restore and choose the file from Drive.</p>
       <div class="btn-grid">
-        <button class="btn" data-act="export-json">⬇️ Backup</button>
+        <button class="btn" data-act="export-json">⬇️ Download</button>
         <button class="btn" data-act="import-json">⬆️ Restore</button>
         <button class="btn" data-act="export-csv">📄 Export CSV</button>
         <button class="btn" data-act="import-csv">📥 Import CSV</button>
@@ -1022,6 +1196,11 @@ function setRepeat(r) {
     $$('#fRepeat button').forEach(b => b.classList.toggle('active', b.dataset.r === r));
 }
 
+function updateDateBS() {
+    const v = $('#fDate').value;
+    $('#fDateBS').textContent = bsOn() && v ? bsFull(v) : '';
+}
+
 function updateAmtHint() {
     const inp = $('#fAmt');
     const raw = inp.value;
@@ -1059,6 +1238,7 @@ function openForm(type = 'expense', id = null) {
     setFormType(type);
     renderCatChips();
     updateAmtHint();
+    updateDateBS();
     showSheet('#modal');
     if (!rec) setTimeout(() => $('#fAmt').focus(), 150);
 }
@@ -1072,6 +1252,7 @@ function duplicateForm() {
     ui.editing = null;
     $('#typeToggle').hidden = true;
     $('#fDate').value = todayStr();
+    updateDateBS();
     setRepeat('none');
     setFormType(ui.formType);
     toast('Copy ready. Change anything and tap Save.');
@@ -1269,16 +1450,19 @@ function editRecurring(id) {
 /* ---------- Generic dialog ---------- */
 let dlg = null;
 
-function openDialog({title, fields, note = '', submitLabel = 'Save', onSubmit, onDelete}) {
-    dlg = {fields, onSubmit, onDelete};
+function openDialog({title, fields, note = '', top = '', submitLabel = 'Save', onSubmit, onDelete, extra = []}) {
+    dlg = {fields, onSubmit, onDelete, extra};
     $('#dTitle').textContent = title;
-    $('#dBody').innerHTML = fields.map(f => `
+    $('#dBody').innerHTML = top + fields.map(f => `
     <div class="field">
       <label for="d_${f.key}">${f.label}</label>
-      <input id="d_${f.key}" class="input" type="${f.type || 'text'}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''}
-        value="${esc(f.value ?? '')}" placeholder="${esc(f.placeholder || '')}" maxlength="${f.max || 60}" autocomplete="off">
+      ${f.type === 'select'
+        ? `<select id="d_${f.key}" class="input">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${v === f.value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
+        : `<input id="d_${f.key}" class="input" type="${f.type || 'text'}" ${f.inputmode ? `inputmode="${f.inputmode}"` : ''}
+        value="${esc(f.value ?? '')}" placeholder="${esc(f.placeholder || '')}" maxlength="${f.max || 60}" autocomplete="off">`}
     </div>`).join('') + (note ? `<p class="muted small" style="margin:0">${note}</p>` : '');
     $('#dActions').innerHTML = `${onDelete ? '<button type="button" class="btn danger" data-dact="delete">Delete</button>' : ''}
+    ${extra.map((x, i) => `<button type="button" class="btn ${x.cls || ''}" data-dact="x${i}">${x.label}</button>`).join('')}
     <button type="submit" class="btn primary">${submitLabel}</button>`;
     $('#dError').textContent = '';
     showSheet('#dialog');
@@ -1352,6 +1536,263 @@ function openGoal(id = null) {
             render();
         } : null
     });
+}
+
+/* ---------- Lent & borrowed ---------- */
+const debtLeft = d => Math.max(0, Math.round((d.amt - (d.payments || []).reduce((a, p) => a + p.amt, 0)) * 100) / 100);
+
+function debtTotals() {
+    const open = state.debts.filter(d => !d.settled && debtLeft(d) > 0);
+    return {
+        open,
+        owedToMe: open.filter(d => d.dir === 'lent').reduce((a, d) => a + debtLeft(d), 0),
+        iOwe: open.filter(d => d.dir === 'borrowed').reduce((a, d) => a + debtLeft(d), 0)
+    };
+}
+
+function dueText(d) {
+    if (!d.due || d.settled) return '';
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    const n = Math.round((parseDate(d.due) - t) / 864e5);
+    if (n < 0) return `<span class="overdue">${-n} day${n === -1 ? '' : 's'} overdue</span>`;
+    if (n === 0) return '<span class="overdue">due today</span>';
+    return `due ${n === 1 ? 'tomorrow' : `in ${n} days`}`;
+}
+
+function debtRow(d) {
+    const left = debtLeft(d);
+    const paid = d.amt - left;
+    const lent = d.dir === 'lent';
+    const sub = [lent ? 'owes you' : 'you owe', dueText(d), paid > 0 && left > 0 ? `${money(paid)} paid back` : '', d.note ? esc(d.note) : '']
+        .filter(Boolean).join(' · ');
+    return `<button class="tx debt ${d.settled || !left ? 'settled' : ''}" data-debt="${esc(d.id)}">
+    <span class="tx-icon" style="background:${lent ? 'color-mix(in srgb, var(--flag-green) 18%, var(--paper))' : 'color-mix(in srgb, var(--flag-red) 15%, var(--paper))'}">${lent ? '🤝' : '🙏'}</span>
+    <span class="tx-main"><span class="tx-title">${esc(d.person)}</span><span class="tx-sub">${d.settled || !left ? 'settled' : sub}</span></span>
+    <span class="tx-amt ${lent ? 'pos' : 'neg'}">${money(d.settled ? d.amt : left)}</span>
+  </button>`;
+}
+
+function renderDebts() {
+    const {open, owedToMe, iOwe} = debtTotals();
+    const done = state.debts.filter(d => d.settled || debtLeft(d) <= 0);
+    const sortOpen = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || b.date.localeCompare(a.date);
+    const lent = open.filter(d => d.dir === 'lent').sort(sortOpen);
+    const borrowed = open.filter(d => d.dir === 'borrowed').sort(sortOpen);
+    $('#view-debts').innerHTML = `
+    <div class="ledger two">
+      ${statHtml('Owed to you', moneyShort(owedToMe), owedToMe ? 'pos' : '', `${lent.length} ${lent.length === 1 ? 'person' : 'people'}`)}
+      ${statHtml('You owe', moneyShort(iOwe), iOwe ? 'neg' : '', `${borrowed.length} ${borrowed.length === 1 ? 'person' : 'people'}`)}
+    </div>
+    ${!state.debts.length ? `<div class="card">${empty('🤝', 'Nobody owes anybody', 'Lent a friend money or borrowed some? Add it here so you don’t forget. It isn’t counted as spending.', false)}
+      <button class="btn primary full" data-act="debt-new">Add lent or borrowed money</button></div>` : ''}
+    ${lent.length ? `<section class="block"><h2>They owe you</h2><div class="panel tx-list">${lent.map(debtRow).join('')}</div></section>` : ''}
+    ${borrowed.length ? `<section class="block"><h2>You owe</h2><div class="panel tx-list">${borrowed.map(debtRow).join('')}</div></section>` : ''}
+    ${done.length ? `<section class="block"><h2>Settled</h2><div class="panel tx-list">${done.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map(debtRow).join('')}</div></section>` : ''}
+    <p class="note">Lending and borrowing are kept separate from your expenses and income, so they don’t change your spending totals.</p>`;
+}
+
+function openDebt(id = null) {
+    const d = id ? state.debts.find(x => x.id === id) : null;
+    if (!d) {
+        return openDialog({
+            title: 'Lent or borrowed',
+            fields: [
+                {
+                    key: 'dir',
+                    label: 'What happened?',
+                    type: 'select',
+                    value: 'lent',
+                    options: [['lent', 'I lent money to someone'], ['borrowed', 'I borrowed money from someone']]
+                },
+                {key: 'person', label: 'Who?', placeholder: 'e.g. Rajesh', max: 40},
+                {key: 'amt', label: 'Amount', inputmode: 'decimal', placeholder: '500'},
+                {key: 'date', label: 'Date', type: 'date', value: todayStr()},
+                {key: 'due', label: 'Pay back by (optional)', type: 'date'},
+                {key: 'note', label: 'Note (optional)', placeholder: 'e.g. Concert tickets', max: 80}
+            ],
+            submitLabel: 'Add',
+            onSubmit: v => {
+                const amt = parseAmount(v.amt);
+                if (!v.person.trim()) return 'Who was it?';
+                if (!(amt > 0)) return 'Enter an amount greater than 0.';
+                state.debts.push({
+                    id: uid(),
+                    dir: v.dir,
+                    person: v.person.trim(),
+                    amt: Math.round(amt * 100) / 100,
+                    date: v.date || todayStr(),
+                    due: v.due || '',
+                    note: v.note.trim(),
+                    payments: [],
+                    settled: false,
+                    created: Date.now()
+                });
+                save();
+                render();
+                toast(v.dir === 'lent' ? `Noted: ${v.person.trim()} owes you ${money(amt)}` : `Noted: you owe ${v.person.trim()} ${money(amt)}`);
+            }
+        });
+    }
+    const left = debtLeft(d);
+    const lent = d.dir === 'lent';
+    const history = (d.payments || []).map(p => `<li><span>${dayLabel(p.date)}</span><b>${money(p.amt)}</b></li>`).join('');
+    openDialog({
+        title: d.person,
+        top: `<div class="debt-sum">
+        <span>${lent ? 'Lent' : 'Borrowed'} ${money(d.amt)} on ${dayLabel(d.date)}</span>
+        <strong class="${lent ? 'pos' : 'neg'}">${d.settled || !left ? 'Settled' : `${money(left)} ${lent ? 'still owed to you' : 'still to pay'}`}</strong>
+        ${history ? `<ul class="pay-hist">${history}</ul>` : ''}
+      </div>`,
+        fields: [
+            ...(!d.settled && left ? [{
+                key: 'pay',
+                label: lent ? 'They paid back (optional)' : 'I paid back (optional)',
+                inputmode: 'decimal',
+                placeholder: `up to ${money(left)}`
+            }] : []),
+            {key: 'person', label: 'Who?', value: d.person, max: 40},
+            {key: 'amt', label: 'Original amount', value: d.amt, inputmode: 'decimal'},
+            {key: 'due', label: 'Pay back by', type: 'date', value: d.due || ''},
+            {key: 'note', label: 'Note', value: d.note || '', max: 80}
+        ],
+        extra: !d.settled && left ? [{
+            label: 'Settled', fn: () => {
+                const rest = debtLeft(d);
+                if (rest > 0) d.payments.push({date: todayStr(), amt: rest});
+                d.settled = true;
+                save();
+                render();
+                toast(`${d.person}: all settled 🎉`);
+            }
+        }] : [],
+        onSubmit: v => {
+            const amt = parseAmount(v.amt);
+            if (!v.person.trim()) return 'Who was it?';
+            if (!(amt > 0)) return 'Enter an amount greater than 0.';
+            d.person = v.person.trim();
+            d.amt = Math.round(amt * 100) / 100;
+            d.due = v.due || '';
+            d.note = v.note.trim();
+            if (v.pay) {
+                const p = parseAmount(v.pay);
+                if (!(p > 0)) return 'Paid back must be a number greater than 0.';
+                d.payments.push({date: todayStr(), amt: Math.round(Math.min(p, debtLeft(d)) * 100) / 100});
+            }
+            if (debtLeft(d) <= 0) d.settled = true;
+            save();
+            render();
+            toast(d.settled ? `${d.person}: all settled 🎉` : v.pay ? `Recorded. ${money(debtLeft(d))} left` : 'Saved');
+        },
+        onDelete: () => {
+            if (!confirm(`Delete this record for ${d.person}?`)) return;
+            state.debts = state.debts.filter(x => x.id !== d.id);
+            save();
+            render();
+        }
+    });
+}
+
+/* ---------- Daily reminder ---------- */
+
+// Tiny key-value store the service worker can also read (it can't read localStorage)
+function idb(mode, fn) {
+    return new Promise(resolve => {
+        try {
+            const r = indexedDB.open('expense-tracker-sw', 1);
+            r.onupgradeneeded = () => r.result.createObjectStore('kv');
+            r.onsuccess = () => {
+                const tx = r.result.transaction('kv', mode);
+                const out = fn(tx.objectStore('kv'));
+                tx.oncomplete = () => resolve(out && out.result);
+                tx.onerror = () => resolve(null);
+            };
+            r.onerror = () => resolve(null);
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+function loggedToday() {
+    const t = todayStr();
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return [...state.expenses, ...state.income].some(x => x.date === t || (x.created || 0) >= start.getTime());
+}
+
+function syncReminderState() {
+    const r = state.settings.reminder;
+    idb('readwrite', s => s.put({on: !!r.on, time: r.time, lastLog: loggedToday() ? todayStr() : null}, 'reminder'));
+}
+
+function reminderDue() {
+    const r = state.settings.reminder;
+    if (!r.on || loggedToday()) return false;
+    const [hh, mm] = r.time.split(':').map(Number);
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes() >= hh * 60 + mm;
+}
+
+async function enableBackgroundReminder() {
+    try {
+        if (!('serviceWorker' in navigator) || !('Notification' in window)) return 'unsupported';
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return 'denied';
+        const reg = await navigator.serviceWorker.ready;
+        if (!('periodicSync' in reg)) return 'no-bg';
+        const st = await navigator.permissions.query({name: 'periodic-background-sync'}).catch(() => ({state: 'denied'}));
+        if (st.state !== 'granted') return 'no-bg';
+        await reg.periodicSync.register('daily-reminder', {minInterval: 4 * 3600 * 1000});
+        return 'ok';
+    } catch (e) {
+        return 'no-bg';
+    }
+}
+
+function reminderCalendarLinks() {
+    const [hh, mm] = state.settings.reminder.time.split(':').map(Number);
+    const d = new Date();
+    d.setHours(hh, mm, 0, 0);
+    const end = new Date(d.getTime() + 5 * 60000);
+    const fmt = x => `${x.getFullYear()}${pad(x.getMonth() + 1)}${pad(x.getDate())}T${pad(x.getHours())}${pad(x.getMinutes())}00`;
+    const app = location.protocol.startsWith('http') ? location.origin + location.pathname : '';
+    const details = `Open Expense Tracker and add what you spent today.${app ? ' ' + app : ''}`;
+    const google = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+        + `&text=${encodeURIComponent("Log today's expenses")}&dates=${fmt(d)}/${fmt(end)}`
+        + `&recur=${encodeURIComponent('RRULE:FREQ=DAILY')}&details=${encodeURIComponent(details)}`;
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Expense Tracker//EN', 'BEGIN:VEVENT',
+        `UID:expense-reminder-${Date.now()}@expense-tracker`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
+        `DTSTART:${fmt(d)}`, 'DURATION:PT5M', 'RRULE:FREQ=DAILY', "SUMMARY:Log today's expenses", `DESCRIPTION:${details}`,
+        'BEGIN:VALARM', 'ACTION:DISPLAY', "DESCRIPTION:Log today's expenses", 'TRIGGER:PT0M', 'END:VALARM',
+        'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    return {google, ics};
+}
+
+/* ---------- Backup to Google Drive (via the share menu) ---------- */
+function backupText() {
+    const copy = JSON.parse(JSON.stringify(state));
+    copy.settings.pinHash = null; // never put the PIN in a backup
+    return JSON.stringify(copy, null, 2);
+}
+
+async function shareBackup() {
+    // Phones only allow sharing certain file types, so the backup goes out as .txt (Restore reads it fine)
+    const file = new File([backupText()], `expense-backup-${todayStr()}.txt`, {type: 'text/plain'});
+    if (navigator.canShare && navigator.canShare({files: [file]})) {
+        try {
+            await navigator.share({files: [file], title: 'Expense Tracker backup'});
+            state.settings.lastBackup = Date.now();
+            save();
+            render();
+            toast('Backup sent. Pick Drive to keep it safe.');
+            return;
+        } catch (e) {
+            if (e.name === 'AbortError') return;
+        }
+    }
+    exportJSON();
+    toast('Sharing isn’t available here, so the backup was downloaded instead.');
 }
 
 /* ---------- PIN lock ---------- */
@@ -1609,9 +2050,7 @@ function download(filename, content, mime) {
 function exportJSON() {
     state.settings.lastBackup = Date.now();
     save();
-    const copy = JSON.parse(JSON.stringify(state));
-    copy.settings.pinHash = null; // never put the PIN in a backup file
-    download(`expense-backup-${todayStr()}.json`, JSON.stringify(copy, null, 2), 'application/json');
+    download(`expense-backup-${todayStr()}.json`, backupText(), 'application/json');
     toast('Backup downloaded. Keep it somewhere safe.');
     if (ui.view === 'dashboard' || ui.view === 'settings') render();
 }
@@ -1636,6 +2075,7 @@ function importJSON(file) {
         try {
             const data = JSON.parse(reader.result);
             if (!data || !Array.isArray(data.expenses)) throw new Error('bad');
+            // (backups shared to Drive are .txt files with the same JSON inside)
             const next = normalize(data);
             next.settings.pinHash = state.settings.pinHash;
             if (!confirm(`Restore this backup?\n\n${next.expenses.length} expenses and ${next.income.length} income entries.\nThis replaces what is on this device now.`)) return;
@@ -1752,6 +2192,34 @@ function loadDemo() {
             active: true
         }
     );
+    if (!state.debts.length) {
+        const ago = n => ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() - n));
+        const ahead = n => ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + n));
+        state.debts.push(
+            {
+                id: uid(),
+                dir: 'lent',
+                person: 'Rajesh',
+                amt: 1500,
+                date: ago(12),
+                due: ago(2),
+                note: 'Concert tickets',
+                payments: [{date: ago(5), amt: 500}],
+                settled: false
+            },
+            {
+                id: uid(),
+                dir: 'borrowed',
+                person: 'Sita',
+                amt: 800,
+                date: ago(4),
+                due: ahead(6),
+                note: 'Lunch + taxi',
+                payments: [],
+                settled: false
+            }
+        );
+    }
     if (!state.goals.length) {
         state.goals.push({
             id: uid(),
@@ -1776,7 +2244,9 @@ function onSettingsChange(e) {
     const i = Number(el.dataset.i);
 
     if (f === 'currency') s.currency = el.value.trim();
-    else if (f === 'numstyle') s.numberStyle = el.value;
+    else if (f === 'rem-time') {
+        if (el.value) s.reminder.time = el.value;
+    } else if (f === 'numstyle') s.numberStyle = el.value;
     else if (f === 'cat-color') s.categories[i].color = el.value;
     else if (f === 'cat-icon') s.categories[i].icon = el.value.trim() || '🏷️';
     else if (f === 'cat-budget') {
@@ -1840,6 +2310,26 @@ function onSettingsClick(e) {
         s.payments.splice(i, 1);
     } else if (act === 'del-src') {
         s.sources.splice(i, 1);
+    } else if (act === 'bs') {
+        s.bsDates = b.dataset.v === 'on';
+        toast(s.bsDates ? `Today is ${bsFull(todayStr()) || 'outside the supported years'}` : 'Nepali dates hidden');
+    } else if (act === 'rem') {
+        s.reminder.on = b.dataset.v === 'on';
+        save();
+        if (s.reminder.on) {
+            enableBackgroundReminder().then(r => {
+                ui.bgReminder = r;
+                renderSettings();
+            });
+            toast(`Reminder set for ${s.reminder.time}`);
+        }
+    } else if (act === 'rem-google') {
+        window.open(reminderCalendarLinks().google, '_blank');
+        return;
+    } else if (act === 'rem-ics') {
+        download('expense-reminder.ics', reminderCalendarLinks().ics, 'text/calendar');
+        toast('Open the downloaded file to add it to your calendar');
+        return;
     } else if (act === 'clear-budgets') {
         if (!s.categories.some(c => c.budget)) return toast('No budgets to clear.');
         if (!confirm('Remove every category budget?\n\nYour spending stays tracked, just without limits.')) return;
@@ -1914,6 +2404,7 @@ function onSettingsClick(e) {
         state.income = [];
         state.recurring = [];
         state.goals = [];
+        state.debts = [];
         toast('All entries erased');
     }
     save();
@@ -1922,6 +2413,7 @@ function onSettingsClick(e) {
 
 /* ---------- Events ---------- */
 function shiftPeriod(dir) {
+    ui.expF.day = null;
     if (ui.view === 'yearly') ui.year += dir;
     else {
         ui.m += dir;
@@ -1956,21 +2448,27 @@ function bindEvents() {
         ui.year = t.getFullYear();
         render();
     });
-    $('#fab').addEventListener('click', () => openForm(ui.view === 'income' ? 'income' : 'expense'));
+    $('#fab').addEventListener('click', () => (ui.view === 'debts' ? openDebt() : openForm(ui.view === 'income' ? 'income' : 'expense')));
 
     // global clicks (transactions, empty-state buttons, budget rows, chart tips)
     document.addEventListener('click', e => {
-        const tx = e.target.closest('.tx');
+        const debtRowEl = e.target.closest('[data-debt]');
+        if (debtRowEl) return openDebt(debtRowEl.dataset.debt);
+        const tx = e.target.closest('.tx[data-type]');
         if (tx) return openForm(tx.dataset.type, tx.dataset.id);
         const add = e.target.closest('[data-act="add"]');
         if (add) return openForm(ui.view === 'income' ? 'income' : 'expense');
         if (e.target.closest('[data-act="goal-new"]')) return openGoal();
+        if (e.target.closest('[data-act="debt-new"]')) return openDebt();
+        const debt = e.target.closest('[data-debt]');
+        if (debt) return openDebt(debt.dataset.debt);
+        if (e.target.closest('[data-act="share-backup"]')) return shareBackup();
         const goal = e.target.closest('[data-goal]');
         if (goal) return openGoal(goal.dataset.goal);
-        if (e.target.closest('[data-act="backup-now"]')) return exportJSON();
+        if (e.target.closest('[data-act="backup-now"]')) return shareBackup();
         const br = e.target.closest('.budget-row');
         if (br) {
-            ui.expF = {q: '', cat: br.dataset.cat, pay: '', scope: 'month', sort: 'new'};
+            ui.expF = {...ui.expF, q: '', cat: br.dataset.cat, pay: '', scope: 'month', sort: 'new', day: null};
             return go('expenses');
         }
         const gt = e.target.closest('[data-goto]');
@@ -1994,6 +2492,18 @@ function bindEvents() {
     });
     $('#expPay').addEventListener('change', e => {
         ui.expF.pay = e.target.value;
+        renderTxView('expense');
+    });
+    $('#expMode').addEventListener('click', () => {
+        ui.expF.mode = ui.expF.mode === 'cal' ? 'list' : 'cal';
+        ui.expF.day = null;
+        renderTxView('expense');
+    });
+    $('#expCal').addEventListener('click', e => {
+        const b = e.target.closest('[data-day]');
+        if (!b) return;
+        const d = b.dataset.day;
+        ui.expF.day = !d || ui.expF.day === d ? null : d;
         renderTxView('expense');
     });
     $('#expSort').addEventListener('change', e => {
@@ -2045,6 +2555,7 @@ function bindEvents() {
         if (b) setRepeat(b.dataset.r);
     });
     $('#fAmt').addEventListener('input', updateAmtHint);
+    $('#fDate').addEventListener('input', updateDateBS);
     // + − × ÷ buttons (phone number keypads don't have them)
     const calcBar = $('#calcBar');
     calcBar.addEventListener('pointerdown', e => {
@@ -2111,6 +2622,14 @@ function bindEvents() {
     $('#dForm').addEventListener('submit', submitDialog);
     $$('[data-dclose]').forEach(el => el.addEventListener('click', () => hideSheet('#dialog')));
     $('#dActions').addEventListener('click', e => {
+        const xb = e.target.closest('[data-dact^="x"]');
+        if (xb && dlg && dlg.extra) {
+            const x = dlg.extra[Number(xb.dataset.dact.slice(1))];
+            hideSheet('#dialog');
+            dlg = null;
+            x.fn();
+            return;
+        }
         if (e.target.closest('[data-dact="delete"]') && dlg && dlg.onDelete) {
             const fn = dlg.onDelete;
             hideSheet('#dialog');
@@ -2215,6 +2734,14 @@ bindEvents();
 if (state.settings.pinHash) showLock('unlock');
 runRecurring();
 render();
+syncReminderState();
+{
+    const add = new URLSearchParams(location.search).get('add');
+    if (add === 'expense' || add === 'income') {
+        history.replaceState(null, '', location.pathname);
+        setTimeout(() => openForm(add), 50);
+    }
+}
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     const hadController = !!navigator.serviceWorker.controller;
