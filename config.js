@@ -3,5 +3,5 @@
    serverUrl: 'https://my-laptop.tail1234.ts.net'
    Leave it empty to let each person type an address in Settings. */
 window.EXPENSE_CONFIG = {
-  serverUrl: ''
+    serverUrl: 'https://yes.tailc2a7af.ts.net'
 };
