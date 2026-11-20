@@ -2847,3 +2847,54 @@ body:has(.modal:not([hidden])) .toast {
         background: #2B59C3;
     }
 }
+
+/* reminder diagnostics */
+.rem-option {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: var(--r-sm);
+    background: var(--paper-2);
+}
+
+.rem-option > b {
+    font-size: 15px;
+}
+
+.rem-option .btn {
+    background: var(--paper);
+}
+
+.rem-option .btn.primary {
+    background: var(--cobalt);
+}
+
+.checks {
+    list-style: none;
+    margin: 4px 0 6px;
+    padding: 0;
+    display: grid;
+    gap: 5px;
+    font-size: 13.5px;
+}
+
+.checks li {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 4px;
+}
+
+.checks li.ok span {
+    color: var(--ok);
+    font-weight: 800;
+}
+
+.checks li.bad span {
+    color: var(--danger);
+    font-weight: 800;
+}
+
+.checks li.bad {
+    color: var(--ink);
+}

@@ -1219,11 +1219,23 @@ function renderSettings() {
       </div>
       <div class="set-row"><label for="sRemTime">At</label><input id="sRemTime" type="time" class="input sm" data-f="rem-time" value="${esc(s.reminder.time)}"></div>
       ${s.reminder.on ? `
-        <p class="muted small">If you haven’t logged anything by then, you’ll see a nudge when you open the app${ui.bgReminder === 'ok' ? ', and your phone will notify you (it can arrive a little late: Android decides the exact time)' : ''}.</p>
-        ${ui.bgReminder && ui.bgReminder !== 'ok' ? `<p class="muted small">${ui.bgReminder === 'denied' ? 'Notifications are blocked for this site.' : 'This browser can’t send reminders while the app is closed.'} For a reminder that always works, add one to your calendar:</p>` : '<p class="muted small">Most reliable: add a repeating reminder to your phone’s calendar.</p>'}
-        <div class="btn-grid">
-          <button class="btn" data-act="rem-google">📅 Google Calendar</button>
-          <button class="btn" data-act="rem-ics">🗓️ Other calendar</button>
+        <p class="muted small">You get this only on days you haven’t logged anything by ${esc(s.reminder.time)}.</p>
+        <div class="rem-option">
+          <b>Calendar reminder: always on time</b>
+          <span class="muted small">Adds a repeating daily event, and your calendar app notifies you.</span>
+          <div class="btn-grid">
+            <button class="btn primary" data-act="rem-google">📅 Google Calendar</button>
+            <button class="btn" data-act="rem-ics">🗓️ Other calendar</button>
+          </div>
+        </div>
+        <div class="rem-option">
+          <b>App notification: best effort</b>
+          <span class="muted small">Android only. Chrome decides when to wake the app, so it can be late or skipped.</span>
+          <ul class="checks" id="remChecks"><li class="muted">Checking…</li></ul>
+          <div class="btn-grid">
+            <button class="btn" data-act="rem-test">🔔 Send test</button>
+            <button class="btn" data-act="rem-retry">Turn on again</button>
+          </div>
         </div>` : '<p class="muted small" style="margin-bottom:0">A nudge to log your spending each evening, so the habit sticks.</p>'}
     </div>
 
@@ -1266,6 +1278,19 @@ function renderSettings() {
     </div>
     <p class="footnote">Expense Tracker · works offline · data never leaves your device</p>`;
     $('#sNum').value = s.numberStyle;
+    if (s.reminder.on && $('#remChecks')) {
+        reminderChecks().then(c => {
+            const el = $('#remChecks');
+            if (!el) return;
+            const row = (ok, good, bad) => `<li class="${ok ? 'ok' : 'bad'}"><span>${ok ? '✓' : '✗'}</span>${ok ? good : bad}</li>`;
+            el.innerHTML = [
+                row(c.installed, 'Installed on home screen', 'Not installed: open it from a home-screen icon, not a browser tab'),
+                row(c.permission === 'granted', 'Notifications allowed', c.permission === 'denied' ? 'Notifications blocked: allow them in Chrome’s site settings' : c.permission === 'unsupported' ? 'This browser can’t show notifications' : 'Notifications not allowed yet: tap “Turn on again”'),
+                row(c.bgSupported, 'Background checks supported', 'This browser can’t run reminders while closed (iPhone and most non-Chrome browsers)'),
+                ...(c.bgSupported ? [row(c.bgRegistered, 'Daily check scheduled', 'Daily check not scheduled yet: install the app, then tap “Turn on again”')] : [])
+            ].join('');
+        });
+    }
 }
 
 /* ---------- Charts (canvas, no libraries) ---------- */
@@ -2118,6 +2143,38 @@ function reminderCalendarLinks() {
     return {google, ics};
 }
 
+// What's working and what isn't, so the user can see why a notification didn't arrive
+async function reminderChecks() {
+    const out = {
+        installed: window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone,
+        permission: 'Notification' in window ? Notification.permission : 'unsupported',
+        bgSupported: false,
+        bgRegistered: false
+    };
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        out.bgSupported = 'periodicSync' in reg;
+        if (out.bgSupported) out.bgRegistered = (await reg.periodicSync.getTags()).includes('daily-reminder');
+    } catch (e) { /* ignore */
+    }
+    return out;
+}
+
+async function testNotification() {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return toast('This browser can’t show notifications.');
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return toast('Notifications are blocked. Allow them in your browser’s site settings.');
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Test from Expense Tracker', {
+        body: 'Notifications work on this phone.',
+        icon: 'icons/icon-192.png',
+        badge: 'icons/icon-192.png',
+        tag: 'test',
+        data: {url: './'}
+    });
+    toast('Test sent. Check your notification shade.');
+}
+
 /* ---------- Backup to Google Drive (via the share menu) ---------- */
 function backupText() {
     const copy = JSON.parse(JSON.stringify(state));
@@ -2672,6 +2729,16 @@ function onSettingsClick(e) {
             });
             toast(`Reminder set for ${s.reminder.time}`);
         }
+    } else if (act === 'rem-test') {
+        testNotification();
+        return;
+    } else if (act === 'rem-retry') {
+        enableBackgroundReminder().then(r => {
+            ui.bgReminder = r;
+            renderSettings();
+            toast(r === 'ok' ? 'Daily check scheduled' : r === 'denied' ? 'Notifications are blocked for this site' : 'Background checks aren’t available here. Use the calendar reminder.');
+        });
+        return;
     } else if (act === 'rem-google') {
         window.open(reminderCalendarLinks().google, '_blank');
         return;
