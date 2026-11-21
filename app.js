@@ -125,8 +125,20 @@ const parseDate = s => {
     return new Date(y, m - 1, d);
 };
 
+// Privacy mode: hide every amount on this device (tap the eye in the top bar)
+const HIDE_KEY = 'expense-tracker-hide';
+let hideAmounts = (() => {
+    try {
+        return localStorage.getItem(HIDE_KEY) === '1';
+    } catch (e) {
+        return false;
+    }
+})();
+const MASK = '•••••';
+
 function money(n, {sign = false} = {}) {
     const v = Number(n) || 0;
+    if (hideAmounts) return (state.settings.currency ? state.settings.currency + ' ' : '') + MASK;
     const abs = Math.abs(v);
     const num = abs.toLocaleString(state.settings.numberStyle || 'en-IN', {
         minimumFractionDigits: 0,
@@ -139,6 +151,7 @@ function money(n, {sign = false} = {}) {
 
 // Short form for tight spaces: Rs 1.24 Cr, Rs 12.5 L (or M/k for 100,000-style)
 function moneyShort(n) {
+    if (hideAmounts) return (state.settings.currency ? state.settings.currency + ' ' : '') + MASK;
     const v = Number(n) || 0, a = Math.abs(v);
     const cur = state.settings.currency ? state.settings.currency + ' ' : '';
     const sign = v < 0 ? '−' : '';
@@ -154,6 +167,7 @@ function moneyShort(n) {
 }
 
 function compact(v) {
+    if (hideAmounts) return v ? '•••' : '0';
     if (v >= 1e7) return +(v / 1e7).toFixed(1) + 'Cr';
     if (v >= 1e5 && state.settings.numberStyle === 'en-IN') return +(v / 1e5).toFixed(1) + 'L';
     if (v >= 1e6) return +(v / 1e6).toFixed(1) + 'M';
@@ -456,7 +470,8 @@ function renderDashboard() {
     $('#viewTitle').textContent = hour < 5 ? 'Up late?' : hour < 12 ? 'Good morning' : hour < 17 ? 'Hey there' : 'Good evening';
 
     $('#view-dashboard').innerHTML = `
-    <section class="hero ${intro ? 'intro' : ''}">
+    <div class="dash-main">
+<div class="dz" style="order:1"><section class="hero ${intro ? 'intro' : ''}">
       <div class="flagline" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       <div class="hero-top">
         <span class="hero-label">Spent in ${MONTHS[m]}${isCur ? ' so far' : ''}</span>
@@ -511,23 +526,14 @@ function renderDashboard() {
     <div class="banner report-ready">
       <span>Your ${MONTHS[pm.m]} report is ready.</span>
       <button class="btn sm" data-report="prev">Open</button>
-    </div>` : ''}
-
-    ${isCur && !isNew ? weekHtml() : ''}
-
-    ${tips.length && !isNew ? `
-    <section class="block">
-      <h2>Worth knowing</h2>
-      <ul class="insights">${tips.map(([ic, html]) => `<li><span class="ii">${ic}</span><span>${html}</span></li>`).join('')}</ul>
-    </section>` : ''}
-
-    ${exp.length ? `
+    </div>` : ''}</div>
+<div class="dz" style="order:2">${isCur && !isNew ? weekHtml() : ''}</div>
+<div class="dz" style="order:4">${exp.length ? `
     <section class="block">
       <div class="block-head"><h2>Day by day</h2><span class="muted small">Tap a bar for the amount</span></div>
       <div class="panel"><canvas class="chart" id="dailyChart"></canvas></div>
-    </section>` : ''}
-
-    ${rows.some(r => r.budget || r.spent) ? `
+    </section>` : ''}</div>
+<div class="dz" style="order:5">${rows.some(r => r.budget || r.spent) ? `
     <section class="block">
       <div class="block-head"><h2>Categories</h2><span class="muted small">Tap one for details</span></div>
       <div class="panel cat-rows">
@@ -548,21 +554,30 @@ function renderDashboard() {
     }).join('')}
       </div>
       ${!budget ? `<p class="note">No budgets yet, and that's fine. After a few weeks, <button class="inline-link" data-goto="settings">let the app suggest budgets</button> from what you actually spend.</p>` : ''}
-    </section>` : ''}
-
-    ${cuts.length ? `
+    </section>` : ''}</div>
+<div class="dz" style="order:11">${recent.length ? `
+    <section class="block">
+      <div class="block-head"><h2>Latest</h2><button class="link" data-goto="expenses">See all</button></div>
+      <div class="panel tx-list">${recent.map(r => txItem(r, r._t)).join('')}</div>
+    </section>` : ''}</div>
+    </div>
+    <div class="dash-side">
+<div class="dz" style="order:3">${tips.length && !isNew ? `
+    <section class="block">
+      <h2>Worth knowing</h2>
+      <ul class="insights">${tips.map(([ic, html]) => `<li><span class="ii">${ic}</span><span>${html}</span></li>`).join('')}</ul>
+    </section>` : ''}</div>
+<div class="dz" style="order:6">${cuts.length ? `
     <section class="block">
       <h2>Could you cut back?</h2>
       <ul class="insights">${cuts.map(([ic, html]) => `<li><span class="ii">${ic}</span><span>${html}</span></li>`).join('')}</ul>
-    </section>` : ''}
-
-    <section class="block">
+    </section>` : ''}</div>
+<div class="dz" style="order:7"><section class="block">
       <div class="block-head"><h2>Saving for</h2><button class="link" data-act="goal-new">New goal</button></div>
       ${state.goals.length ? `<div class="panel goal-list">${state.goals.map(goalRow).join('')}</div>`
         : '<p class="note" style="margin-top:0">A phone, a trip, an emergency fund? Add a goal and watch it fill up.</p>'}
-    </section>
-
-    <section class="block">
+    </section></div>
+<div class="dz" style="order:8"><section class="block">
       <div class="block-head"><h2>Lent &amp; borrowed</h2><button class="link" data-goto="debts">${state.debts.length ? 'See all' : 'Add'}</button></div>
       ${dt.open.length ? `
         <div class="ledger two">
@@ -571,26 +586,19 @@ function renderDashboard() {
         </div>
         <div class="panel tx-list">${dt.open.slice().sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).slice(0, 3).map(debtRow).join('')}</div>`
         : '<p class="note" style="margin-top:0">Lent a friend money, or borrowed some? Keep track so nobody forgets.</p>'}
-    </section>
-
-    ${pays.length ? `
+    </section></div>
+<div class="dz" style="order:9">${pays.length ? `
     <section class="block">
       <h2>Paid with</h2>
       <div class="panel">
         <div class="pay-stack">${pays.map(([name, amt], i) => `<i style="width:${amt / spent * 100}%;background:var(--pay-${i % 5})"></i>`).join('')}</div>
         <ul class="pay-key">${pays.map(([name, amt], i) => `<li><i style="background:var(--pay-${i % 5})"></i><span>${esc(name)}</span><b>${money(amt)}</b><small>${Math.round(amt / spent * 100)}%</small></li>`).join('')}</ul>
       </div>
-    </section>` : ''}
-
-    ${exp.length ? `<button class="report-link" data-report="this">
+    </section>` : ''}</div>
+<div class="dz" style="order:10">${exp.length ? `<button class="report-link" data-report="this">
       <span class="ii">📄</span><span><b>${MONTHS[m]} report</b><small>A one-page summary you can save as PDF or share</small></span>
-      <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>` : ''}
-
-    ${recent.length ? `
-    <section class="block">
-      <div class="block-head"><h2>Latest</h2><button class="link" data-goto="expenses">See all</button></div>
-      <div class="panel tx-list">${recent.map(r => txItem(r, r._t)).join('')}</div>
-    </section>` : ''}
+      <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>` : ''}</div>
+    </div>
   `;
 
     requestAnimationFrame(() => {
@@ -1026,6 +1034,7 @@ function reportSummaryText() {
 
 // at most 4 characters so it fits a small day cell: 850, 1.2k, 12k, 1.2L
 function calAmt(v) {
+    if (hideAmounts) return '•••';
     if (v < 1000) return String(Math.round(v));
     if (v < 9950) return (Math.round(v / 100) / 10).toString().replace(/\.0$/, '') + 'k';
     if (v < 99500) return Math.round(v / 1000) + 'k';
@@ -1208,6 +1217,9 @@ function renderSettings() {
         <div class="segmented small">${['auto', 'light', 'dark'].map(t => `<button data-act="theme" data-v="${t}" class="${s.theme === t ? 'active' : ''}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}</div>
       </div>
       <div class="set-row"><label for="sCur">Currency symbol</label><input id="sCur" class="input sm" data-f="currency" value="${esc(s.currency)}" maxlength="5"></div>
+      <div class="set-row"><span>Hide amounts</span>
+        <div class="segmented small">${[['off', 'Show'], ['on', 'Hide']].map(([v, l]) => `<button data-act="hide" data-v="${v}" class="${(v === 'on') === hideAmounts ? 'active' : ''}">${l}</button>`).join('')}</div>
+      </div>
       <div class="set-row"><span>Nepali dates (BS)</span>
         <div class="segmented small">${[['off', 'Off'], ['on', 'Show']].map(([v, l]) => `<button data-act="bs" data-v="${v}" class="${(v === 'on') === !!s.bsDates ? 'active' : ''}">${l}</button>`).join('')}</div>
       </div>
@@ -3125,6 +3137,9 @@ function onSettingsClick(e) {
         s.payments.splice(i, 1);
     } else if (act === 'del-src') {
         s.sources.splice(i, 1);
+    } else if (act === 'hide') {
+        setHideAmounts(b.dataset.v === 'on');
+        return;
     } else if (act === 'bs') {
         s.bsDates = b.dataset.v === 'on';
         toast(s.bsDates ? `Today is ${bsFull(todayStr()) || 'outside the supported years'}` : 'Nepali dates hidden');
@@ -3251,6 +3266,23 @@ function onSettingsClick(e) {
 }
 
 /* ---------- Events ---------- */
+function setHideAmounts(on) {
+    hideAmounts = on;
+    try {
+        localStorage.setItem(HIDE_KEY, on ? '1' : '0');
+    } catch (e) { /* ignore */
+    }
+    document.body.classList.toggle('amounts-hidden', on);
+    const b = $('#hideBtn');
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Show amounts' : 'Hide amounts');
+    b.title = on ? 'Show amounts' : 'Hide amounts';
+    b.innerHTML = on
+        ? '<svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7c1.9 0 3.6-.6 5-1.5"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    render();
+}
+
 function shiftPeriod(dir) {
     ui.expF.day = null;
     if (ui.view === 'yearly') ui.year += dir;
@@ -3278,6 +3310,10 @@ function go(view) {
 
 function bindEvents() {
     $$('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.view)));
+    $('#hideBtn').addEventListener('click', () => {
+        setHideAmounts(!hideAmounts);
+        toast(hideAmounts ? 'Amounts hidden. Tap the eye to show them' : 'Amounts shown');
+    });
     $('#prevPeriod').addEventListener('click', () => shiftPeriod(-1));
     $('#nextPeriod').addEventListener('click', () => shiftPeriod(1));
     $('#periodLabel').addEventListener('click', () => {
@@ -3632,6 +3668,7 @@ function bindEvents() {
 /* ---------- Start ---------- */
 applyTheme();
 bindEvents();
+if (hideAmounts) setHideAmounts(true);
 if (state.settings.pinHash) showLock('unlock');
 runRecurring();
 render();
